@@ -1,0 +1,25 @@
+{
+  "name": "scheduling",
+  "version": "0.0.1",
+  "authors": [
+    "David Little <david.frank.little@gmail.com>"
+  ],
+  "description": "Simple scheduleding interface.",
+  "main": "app.js",
+  "keywords": [
+    "scheduling",
+    "search"
+  ],
+  "license": "MIT",
+  "ignore": [
+    "**/.*",
+    "src/schedule/js/bower_components"
+  ],
+  "dependencies": {
+    "angular-loader": "~1.4.0",
+    "angular-mocks": "~1.4.0",
+    "angular-route": "~1.4.0",
+    "html5-boilerplate": "~5.2.0"
+    "jquery": "~2.1.4"
+  }
+}
