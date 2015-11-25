@@ -1,3 +1,4 @@
 src/schedule/js/bower_components
 *.pyc
 *.log
+*.sublime-workspace
