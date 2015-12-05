@@ -27,10 +27,35 @@
       <p class="browsehappy">You are using an <strong>outdated</strong> browser. Please <a href="http://browsehappy.com/">upgrade your browser</a> to improve your experience.</p>
   <![endif]-->
 
-  <div ng-controller="ScheduleController as schedule" id='schedule_list'>
-    <ul class="unstyled">
-      <li ng-repeat="time in schedule.data.times.sanchez">{{time}}</li>
-    </ul>
+  <div ng-controller="ScheduleController as schedule" id="schedule_list">
+    <table class="unstyled float-header">
+      <thead>
+      <tr>
+        <th/>
+        <th ng-repeat="time in schedule.data.valid_times | orderBy : '-start' : true",
+            class="timerange" ng-class="{highlight: same_time(active_time,time)}">
+          {{ time.start | date:'h:mm' : 'UTC'}}-
+          {{ time.end | date:'h:mm' : 'UTC'}}
+        </th>
+      </tr>
+      </thead>
+
+      <tbody style="height:90%; overflow: auto">
+      <tr ng-repeat="agent in schedule.data.agents"
+          ng-class-odd="'odd-row'">
+      <th ng-class="{highlight: active_agent === agent}">{{agent}}</th>
+      <td ng-repeat="time in schedule.data.times[agent]"
+          ng-class="{unavailable: !time.available, 
+                     rowlight: active_agent == agent,
+                     collight: same_time(active_time,time)}"
+          ng-click="cell_click(agent,time)"> 
+        <span ng-hide="time.available">
+          &#x2717
+        </span>
+      </td>
+      </tr>
+      </tbody>
+    </table>
   </div>
 </body>
 </html>

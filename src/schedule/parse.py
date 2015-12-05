@@ -2,8 +2,9 @@ from pyrsistent import pmap, pset
 import re
 import pandas as pd
 import numpy as np
+from datetime import datetime
 from schedule import (AllOfRequirement, NOfRequirement, time_sparsity,
-                      time_density, Schedule)
+                      time_density, Schedule, TimeRange)
 
 
 def parse_student_meetings(meetings,N,offset=0):
@@ -36,12 +37,30 @@ def parse_lab_meetings(meetings,offset=0):
   return requirements
 
 
+__base = datetime.strptime("12:00am","%I:%M%p")
+
+def parse_time(time):
+  start,end = time.split("-")
+
+  start_am = datetime.strptime(start+"am","%I:%M%p")
+  start_pm = datetime.strptime(start+"pm","%I:%M%p")
+  end = datetime.strptime(end,"%I:%M%p")
+
+  if (abs((start_am - end).total_seconds()) <
+      abs((start_pm - end).total_seconds())):
+    start = start_am
+  else: start = start_pm
+
+  return TimeRange(start=(start-__base).total_seconds()/60.,
+                   end=(end-__base).total_seconds()/60.)
+
 def parse_schedule(schedule):
   times = {}
-  for col in schedule.columns[1:]:
-    times[col] = pset(clean_up(schedule[schedule[col] != 1].index.values))
+  for col in schedule.columns:
+    times[col] = pset(map(parse_time,
+                          clean_up(schedule[schedule[col] != 1].index.values)))
 
-  return times
+  return (times, schedule.columns)
 
 
 def parse_costs(costs):
@@ -59,7 +78,7 @@ def parse_file(excel_file):
 
   df = excel.parse('Schedule',index_col=0)
   df.columns = clean_up(df.columns)
-  times = parse_schedule(df)
+  times,agents = parse_schedule(df)
 
   df = excel.parse('Meetings',index_col=None)
   df.columns = clean_up(df.columns)
@@ -81,4 +100,5 @@ def parse_file(excel_file):
     old = final_meetings.get(requirement.mid,pset())
     final_meetings[requirement.mid] = old.add(requirement)
 
-  return Schedule(pmap(),pmap(times),costs,pmap(final_meetings),pmap())
+  return Schedule(list(agents),pmap(),pmap(times),costs,
+                  pmap(final_meetings),pmap())

@@ -12,14 +12,11 @@
   ],
   "license": "MIT",
   "ignore": [
-    "**/.*",
-    "src/schedule/js/bower_components"
+    "**/.*"
   ],
   "dependencies": {
-    "angular-loader": "~1.4.0",
-    "angular-mocks": "~1.4.0",
-    "angular-route": "~1.4.0",
-    "html5-boilerplate": "~5.2.0"
+    "angular": "~1.4.0",
+    "html5-boilerplate": "~5.2.0",
     "jquery": "~2.1.4"
   }
 }

@@ -28,3 +28,43 @@
   content: "";
   padding: 0;
 }
+
+tr.odd-row{
+  background-color: rgb(240,240,255);
+}
+tr.odd-row > td.unavailable{
+  background-color: rgb(230,230,255);
+}
+td.unavailable{
+  text-align: center;
+  background-color: rgb(245,245,245);
+}
+
+th.timerange{
+  text-align: center;
+  font-weight: normal;
+  font-size: 0.8em;
+}
+
+th.highlight{
+  border-style: solid;
+}
+
+td.rowlight{
+  border-top-style: solid;
+  border-bottom-style: solid;
+}
+td.collight{
+  border-right-style: solid;
+  border-left-style: solid;
+}
+
+th{
+  border: 0.1em hidden black;
+  padding: 10px;
+  text-align: right;
+}
+td{
+  border: 0.1em hidden black;
+  padding: 10px;
+}

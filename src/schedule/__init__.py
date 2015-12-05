@@ -1,5 +1,7 @@
+from datetime import datetime, timedelta
+import sys
 import json
-from pyrsistent import pset, PRecord, field, thaw
+from pyrsistent import pset, PRecord, field, thaw, freeze, pmap
 import scipy
 import numpy as np
 
@@ -7,12 +9,22 @@ near_time = 25
 
 
 def time_density(times):
-  np.mean(scipy.spatial.pdist(times,'cityblock'))
+  ts = np.array(t.start for t in times)
+  np.mean(scipy.spatial.pdist(ts,'cityblock'))
 
 
 def time_sparsity(times):
-  dists = scipy.spatial.pdist(times,'cityblock')
+  ts = np.array(t.start for t in times)
+  dists = scipy.spatial.pdist(ts,'cityblock')
   return np.mean(1.0 / (1.0+np.exp(-(near_time-dists))))
+
+# time is measured in minutes from 12:00am
+class TimeRange(PRecord):
+  start = field()
+  end = field()
+
+  def __lt__(self,other):
+    return self.start < other.start
 
 
 class Meeting(PRecord):
@@ -28,7 +40,8 @@ class NOfRequirement(object):
     self.agents = pset(agents)
 
   def __repr__(self):
-    return "NOfRequirement("+repr(self.mid)+","+repr(self.N)+","+repr(self.agents)+")"
+    return ("NOfRequirement("+repr(self.mid)+","+
+            repr(self.N)+","+repr(self.agents)+")")
 
   def valid_updates(self,schedule):
     meeting = schedule.meetings.get(self.mid,default=None)
@@ -59,29 +72,92 @@ class AllOfRequirement(object):
   def satisfied(self,schedule):
     return self.mid in schedule.meetings
 
+epoch = datetime.utcfromtimestamp(0)
+def epoch_seconds(time):
+  dt = datetime(2000,1,1) + timedelta(minutes=time)
+  return (dt - epoch).total_seconds() * 1000.0
 
-class SetEncoder(json.JSONEncoder):
+class PRecordEncoder(json.JSONEncoder):
   def default(self, obj):
-    if isinstance(obj, set):
-      return list(obj)
+    if isinstance(obj,set):
+      return sorted(list(obj))
+    elif isinstance(obj,TimeRange):
+      obj = thaw(obj)
+      obj['start'] = int(epoch_seconds(obj['start']))
+      obj['end'] = int(epoch_seconds(obj['end']))
+      return obj
+    elif isinstance(obj,PRecord):
+      return thaw(obj)
 
     return json.JSONEncoder.default(self, obj)
 
+def cached(fn):
+  cached_name = fn.__name__+'_cache'
+
+  def cached_fn(self,*args):
+    try:
+      return self.__dict__[cached_name]
+
+    except KeyError:
+      result = fn(self,*args)
+      self.__dict__[cached_name] = result
+      return result
+
+  return cached_fn
+
 
 class Schedule(object):
-  def __init__(self,meetings,times,costs,unsatisfied,satisfied):
+  def __init__(self,agents,meetings,times,costs,unsatisfied,satisfied):
     self.unsatisfied = unsatisfied
     self.satisfied = satisfied
     self.costs = costs
-    self.cost_cache = None
 
+    # a vector of agents, in an appropriate order
+    self.agents = agents
+
+    # map from meeting ids to meetings (holding the agents and time of the
+    # meeting)
     self.meetings = meetings
+
+    # map from agents to available times (as a set)
     self.times = times
 
+  @cached
+  def invert_meetings(self):
+    inverted = {}
+    for meeting in self.meetings:
+      for agent in meeting.agents:
+        times = inverted.get(agent,default={})
+        times[meeting.time] = meeting.mid
+        inverted[agent] = times
+
+    return freeze(inverted)
+
+  @cached
+  def schedule_cost(self):
+    return sum([self.costs[agent](times) for agent,times in self.times.items()])
+
+  @cached
+  def valid_times(self):
+    return reduce(lambda a,b: a | b,self.times.values())
+
+  @cached
   def tojson(self):
+    def setup_time(time,agent_times):
+      result = thaw(time)
+      result['start'] = int(epoch_seconds(result['start']))
+      result['end'] = int(epoch_seconds(result['end']))
+      result['available'] = time in agent_times
+      return result
+
+    valid_times = sorted(thaw(self.valid_times()))
     result = {'meetings': thaw(self.meetings),
-              'times': thaw(self.times)}
-    return json.dumps(result,cls=SetEncoder)
+              'agents': self.agents,
+              'times': {a: [setup_time(t,ts) for t in valid_times] 
+                        for a,ts in self.times.iteritems()},
+              'valid_times': valid_times,
+              'meetings_inv': thaw(self.invert_meetings())}
+    return json.dumps(result,cls=PRecordEncoder)
 
   def __repr__(self):
     return ("Assigned Meetings:\n" +
@@ -101,24 +177,19 @@ class Schedule(object):
     return time in self.times[a]
 
   def add_meeting(self,mid,agents,time,requirement):
-    return self.__add_helper__(mid,agents,time,requirement,False)
+    meeting = Meeting(mid,agents,time)
+    return self.__add_helper(meeting,requirement)
 
-  def add_agent(self,mid,agents,requirement):
-    return self.__add_helper__(mid,agents,None,requirement,True)
-
-  def __add_helper__(self,mid,agents,time,requirement,ammend):
+  def add_agent(self,mid,agent,requirement):
     meeting = self.meetings.get(mid,default=None)
-    if ammend:
-      assert meeting is not None
-      meeting.set(agents=meeting.agents.add(agents))
-    else:
-      assert time is not None
-      assert meeting is None
-      meeting = Meeting(mid,agents,time)
+    meeting.set(agents=meeting.agents.add(agent))
 
+    return self.__add_helper(meeting,requirement)
+
+  def __add_helper(self,meeting,requirement):
     new_meetings = self.meetings.set(meeting.mid,meeting)
     new_times = self.times.evolver()
-    for a in agents: new_times = new_times[a] - meeting.time
+    for a in meeting.agents: new_times = new_times[a] - meeting.time
 
     if requirement.satisfied():
       old_value = self.satisfied.get(self.mid,default=pset([]))
@@ -129,8 +200,11 @@ class Schedule(object):
         new_unsatisfied = self.unsatisfied.set(self.mid,new_value)
       else:
         new_unsatisfied = self.unsatisfied.remove(self.mid)
+    else:
+      new_unsatisfied = self.unsatisfied
+      new_satisfied = self.satisfied
 
-    return Schedule(new_meetings,new_times,self.costs,
+    return Schedule(self.agents,new_meetings,new_times,self.costs,
                     new_unsatisfied,new_satisfied)
 
   def remove_meeting(self,mid):
@@ -145,7 +219,7 @@ class Schedule(object):
     new_satisfied = self.satisfied.remove(mid)
     new_unsatisfied = self.unsatisfied.set(mid,requirements)
 
-    return Schedule(new_meetings,new_times,self.costs,
+    return Schedule(self.agents,new_meetings,new_times,self.costs,
                     new_unsatisfied,new_satisfied)
 
   def schedule_satisfied(self):
@@ -159,9 +233,3 @@ class Schedule(object):
       else: return []
 
     return valid
-
-  def schedule_cost(self,schedule):
-    if self.cost_cache is None:
-      self.cost_cache = sum([self.costs[agent](times)
-                             for agent,times in self.times.items()])
-    return self.cost_cache
