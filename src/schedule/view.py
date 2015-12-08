@@ -1,11 +1,17 @@
-from flask import Flask, send_from_directory, redirect, Response
+from flask import Flask, send_from_directory, redirect, Response, request
 import os
-import schedule
-from Queue import Queue
+import schedule as s
+from Queue import Queue, Empty
 
 app = Flask("schedule")
 data_queue = Queue()
-js_root = os.path.dirname(os.path.abspath(schedule.__file__))+'/js'
+js_root = os.path.dirname(os.path.abspath(s.__file__))+'/js'
+schedule = s.empty_schedule()
+
+
+def show(sch):
+  global schedule
+  schedule = sch
 
 
 @app.route("/")
@@ -18,10 +24,27 @@ def app_source(path):
   return send_from_directory(js_root,path)
 
 
-def data_stream():
-  while True: yield 'data: %s\n\n' % data_queue.get()
+@app.route('/request_data')
+def request_data():
+  return Response(schedule.tojson(),mimetype='application/json')
 
+@app.route('/update_data')
+def update_data():
+  params = request.get_json()
 
-@app.route('/data')
-def data():
-  return Response(data_stream(),mimetype='text/event-stream')
+  show(schedule.json_update(params))
+  return Response("{success: true}",mimetype='application/json')
+
+@app.route("/toggle_availability",methods=['POST'])
+def toggle_availability():
+  params = request.get_json()
+  show(schedule.toggle_availability(params['agent'],
+       s.as_timerange(params['time'])))
+  return "success"
+
+# def data_stream():
+#   while True: yield 'data: %s\n\n' % data_queue.get()
+
+# @app.route('/data')
+# def data():
+#   return Response(data_stream(),mimetype='text/event-stream')

@@ -60,11 +60,25 @@ td.collight{
 }
 
 th{
-  border: 0.1em hidden black;
   padding: 10px;
   text-align: right;
 }
 td{
-  border: 0.1em hidden black;
   padding: 10px;
+}
+
+td.selected{
+  background-color: rgb(220,220,255)
+}
+
+.detail{
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  z-index: 1;
+}
+
+.data{
+  height: 80%;
 }

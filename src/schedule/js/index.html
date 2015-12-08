@@ -10,52 +10,63 @@
 
   <!-- In production use:
   <script src="//ajax.googleapis.com/ajax/libs/angularjs/x.x.x/angular.min.js"></script>
-  -->
-  <script src="bower_components/jquery/dist/jquery.min.js"></script>
-  <script src="bower_components/angular/angular.js"></script>
-  <script src="app.js"></script>
+-->
+<script src="bower_components/jquery/dist/jquery.min.js"></script>
+<script src="bower_components/angular/angular.js"></script>
+<script src="bower_components/datatables/media/js/jquery.dataTables.min.js"></script>
+<script src="bower_components/angular-datatables/dist/angular-datatables.min.js"></script>  
+<script src="app.js"></script>
 
-  <link rel="stylesheet" href="bower_components/html5-boilerplate/dist/css/normalize.css">
-  <link rel="stylesheet" href="bower_components/html5-boilerplate/dist/css/main.css">
-  <link rel="stylesheet" href="app.css">
-  <script src="bower_components/html5-boilerplate/dist/js/vendor/modernizr-2.8.3.min.js"></script>
+<link rel="stylesheet" href="bower_components/html5-boilerplate/dist/css/normalize.css">
+<link rel="stylesheet" href="bower_components/html5-boilerplate/dist/css/main.css">
+<link rel="stylesheet" href="bower_components/datatables/media/css/jquery.dataTables.min.css">
+<link rel="stylesheet" href="app.css">
+<script src="bower_components/html5-boilerplate/dist/js/vendor/modernizr-2.8.3.min.js"></script>
 
 </head>
 <body>
-  
+
   <!--[if lt IE 7]>
       <p class="browsehappy">You are using an <strong>outdated</strong> browser. Please <a href="http://browsehappy.com/">upgrade your browser</a> to improve your experience.</p>
-  <![endif]-->
+      <![endif]-->
 
-  <div ng-controller="ScheduleController as schedule" id="schedule_list">
-    <table class="unstyled float-header">
-      <thead>
-      <tr>
-        <th/>
-        <th ng-repeat="time in schedule.data.valid_times | orderBy : '-start' : true",
-            class="timerange" ng-class="{highlight: same_time(active_time,time)}">
-          {{ time.start | date:'h:mm' : 'UTC'}}-
-          {{ time.end | date:'h:mm' : 'UTC'}}
-        </th>
-      </tr>
+      <div ng-controller="ScheduleController as schedule" id="schedule_list">
+        <table class="row-border hover" datatable="ng"
+        dt-options="schedule.options">
+        <thead>
+          <tr>
+            <th/>
+            <th ng-repeat="time in schedule.data.valid_times | orderBy : '-start' : true"
+            class="timerange">
+            {{ time.start | date:'h:mm' : 'UTC'}}-
+            {{ time.end | date:'h:mm' : 'UTC'}}
+          </th>
+        </tr>
       </thead>
 
-      <tbody style="height:90%; overflow: auto">
-      <tr ng-repeat="agent in schedule.data.agents"
-          ng-class-odd="'odd-row'">
-      <th ng-class="{highlight: active_agent === agent}">{{agent}}</th>
-      <td ng-repeat="time in schedule.data.times[agent]"
-          ng-class="{unavailable: !time.available, 
-                     rowlight: active_agent == agent,
-                     collight: same_time(active_time,time)}"
-          ng-click="cell_click(agent,time)"> 
-        <span ng-hide="time.available">
-          &#x2717
-        </span>
-      </td>
-      </tr>
-      </tbody>
-    </table>
+      <tbody>
+        <tr ng-repeat="agent in schedule.data.agents">
+          <th>{{agent}}</th>
+          <td ng-repeat="time in schedule.data.times[agent]"
+              ng-class="{unavailable: !time.available, 
+                         selected: isSelected(agent,time)}"
+              ng-click="schedule.toggleAvailability(agent,time)"
+              class="selectable"> 
+            <span ng-hide="time.available">
+              &#x2717
+            </span>
+          </td>
+        </tr>
+
+        <tr>
+          <th><input type="text" ng-model="new_agent"
+                     ng-keypress="schedule.newAgent($event,new_agent)"></th>
+          <td ng=repeat="time in schedule.data.valid_times"/>
+        </tr>
+    </tbody>
+  </table>
+    <!-- TODO: datatables is getting rid of this DIV, I need
+    to have a seperate controller. -->
   </div>
 </body>
 </html>

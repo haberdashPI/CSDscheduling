@@ -1,14 +1,15 @@
 import time
 from logging import DEBUG, FileHandler
-from schedule.view import app, data_queue
+from schedule.view import app, show
 from schedule.parse import parse_file
+import schedule.view as view
+from schedule import TimeRange
 
-s = parse_file('../schedule2015.xlsx')
 
-data_queue.put(s.tojson())
+show(parse_file('../schedule2015.xlsx'))
+
 app.logger.setLevel(DEBUG)
 app.logger.addHandler(FileHandler('flask.log'))
-
 
 try:
   import webview
