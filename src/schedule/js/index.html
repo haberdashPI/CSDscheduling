@@ -30,28 +30,34 @@
       <p class="browsehappy">You are using an <strong>outdated</strong> browser. Please <a href="http://browsehappy.com/">upgrade your browser</a> to improve your experience.</p>
       <![endif]-->
 
-      <div ng-controller="ScheduleController as schedule" id="schedule_list">
+      <div ng-controller="ScheduleController as control" id="schedule_list">
         <table class="row-border hover" datatable="ng"
-        dt-options="schedule.options">
+               dt-options="control.options" dt-instance="control.dt">
         <thead>
           <tr>
             <th/>
-            <th ng-repeat="time in schedule.data.valid_times | orderBy : '-start' : true"
-            class="timerange">
-            {{ time.start | date:'h:mm' : 'UTC'}}-
-            {{ time.end | date:'h:mm' : 'UTC'}}
-          </th>
+            <th ng-repeat="time in schedule.times | orderBy : '-start' : true"
+                class="timerange">
+              {{ time.start | date:'h:mm a' : 'UTC'}}-
+              {{ time.end | date:'h:mm a' : 'UTC'}}
+            </th>
+            <th>
+              <button ng-hide="adding_time" ng-click="adding_time = true">
+                Add Time Slot
+              </button>
+              <input ng-show="adding_time" type="text" ng-model="new_time"
+                     ng-keypress="control.newTime($event,new_time,-1)">
+              </input>
+            </th>
         </tr>
       </thead>
 
       <tbody>
-        <tr ng-repeat="agent in schedule.data.agents">
+        <tr ng-repeat="agent in schedule.agents">
           <th>{{agent}}</th>
-          <td ng-repeat="time in schedule.data.times[agent]"
-              ng-class="{unavailable: !time.available, 
-                         selected: isSelected(agent,time)}"
-              ng-click="schedule.toggleAvailability(agent,time)"
-              class="selectable"> 
+          <td ng-repeat="time in schedule.meetings[agent]"
+              ng-class="{unavailable: time.mid == 0}"
+              ng-click="schedule.toggleAvailability(agent,time)"> 
             <span ng-hide="time.available">
               &#x2717
             </span>
@@ -61,12 +67,11 @@
         <tr>
           <th><input type="text" ng-model="new_agent"
                      ng-keypress="schedule.newAgent($event,new_agent)"></th>
-          <td ng=repeat="time in schedule.data.valid_times"/>
+          <td ng-repeat="time in schedule.data.valid_times"/>
         </tr>
-    </tbody>
+
+  </tbody>
   </table>
-    <!-- TODO: datatables is getting rid of this DIV, I need
-    to have a seperate controller. -->
   </div>
 </body>
 </html>

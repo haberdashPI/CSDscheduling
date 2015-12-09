@@ -61,29 +61,30 @@ class Meeting(PRecord):
   mid = field()
   agents = field()
   time = field()
+  requirements = field()
+
+  def satisified(self,schedule):
+    return all([r.satisified(schedule) for r in self.requirements])
 
 
-class NOfRequirement(object):
+class OneOfRequirement(object):
   def __init__(self,mid,N,agents):
     self.mid = mid
-    self.N = N
     self.agents = pset(agents)
 
-  def __repr__(self):
-    return ("NOfRequirement("+repr(self.mid)+","+
-            repr(self.N)+","+repr(self.agents)+")")
-
-  def valid_updates(self,schedule):
-    meeting = schedule.meetings.get(self.mid,default=None)
+  def valid_updates(self,schedule,meeting):
+    meeting = schedule.backward.get(self.mid,default=None)
     if meeting:
-      updates = [schedule.add_agent(self.mid,a,self)
+      updates = [schedule.add_meeting(meeting,a,self)
                  for a in self.agents if schedule.available(a,meeting.time)]
       if len(updates): return updates
     else: return []
 
-  def satisfied(self,schedule):
-    meeting = schedule.meetings.get(self.mid,None)
-    return meeting and len(self.agents & meeting.agents) > self.N
+  def satisified(self,schedule):
+    return len(self.agents | schedule.backward[self.mid].agents)
+
+  def satisfiable(self,schedule):
+    return len(self.agents | pset(schedule.agents))
 
 
 class AllOfRequirement(object):
@@ -91,16 +92,18 @@ class AllOfRequirement(object):
     self.mid = mid
     self.agents = pset(agents)
 
-  def __repr__(self):
-    return "AllOfRequirement("+repr(self.mid)+","+repr(self.agents)+")"
-
-  def valid_updates(self,schedule):
-    times = reduce(lambda x,y: x & y,[schedule.times[a] for a in self.agents])
+  def valid_updates(self,schedule,meeting):
+    times = schedule.times - pset([t for a in schedule.agents 
+                                   for t in a.keys()])
     if len(times):
-      return [schedule.add_meeting(self.mid,self.agents,t,self) for t in times]
+      return [schedule.add_meeting(meeting.set(time=t),self.agents,self)
+              for t in times]
 
   def satisfied(self,schedule):
-    return self.mid in schedule.meetings
+    return self.agents <= schedule.backward[self.mid].agents
+
+  def satisfiable(self,schedule):
+    return self.agents <= pset(schedule.agents)
 
 
 class PRecordEncoder(json.JSONEncoder):
@@ -124,7 +127,7 @@ def cached(fn):
 
     except KeyError:
       result = fn(self,*args)
-      self.__dict__[cached_name] = result
+      self.cache[cached_name] = result
       return result
 
   return cached_fn
@@ -135,41 +138,69 @@ def empty_schedule():
 
 
 class Schedule(object):
-  def __init__(self,agents,valid_times,meetings,times,available_times,
-               costs,unsatisfied,satisfied):
+  def __init__(self,agents,times,forward,backward,
+               costs,unsatisfied):
     self.cache = {}
 
-    # schedule constraints
-    self.agents = agents  # vector of agents
-    self.valid_times = valid_times  # set of valid times
-    self.available_times = available_times  # map of agents to available times (as a set)
+    # schedule bounds
+    self.agents = agents  # vector of valid agents
+    self.times = times  # set of valid times
 
-    # meetings
-    self.times = times  # map from agents to available times minus meeting times
-    self.meetings = meetings  # map from mids to meeting record (agents and time)
-    self.unsatisfied = unsatisfied  # map from mids to unsatisified requirements
-    self.satisfied = satisfied  # map from mids to satisified requirements
-    self.costs = costs  # map from agents to meeting time costs fucntions
+    # the schedule itself
+    self.forward = forward  # agents -> times -> meeting ids
+    self.backward = backward  # mids -> (times, agents)
+
+    # schedule constraints
+    self.unsatisfied = unsatisfied  # map from mids to unsatisified meetings
+    self.costs = costs  # map from agents to meeting time costs functions
 
 
   def copy(self,**changes):
     result = copy(self)
     result.cache = {}
-    for name,value in changes:
+    for name,value in changes.iteritems():
       result.__dict__[name] = value
 
     return result
 
-  @cached
-  def invert_meetings(self):
-    inverted = {}
-    for meeting in self.meetings:
-      for agent in meeting.agents:
-        times = inverted.get(agent,default={})
-        times[meeting.time] = meeting.mid
-        inverted[agent] = times
+  def available(self,agent,time):
+    return time not in self.forward[agent][time]
 
-    return inverted
+  def add_meeting(self,meeting,agents,new_satisified):
+    new_forward = self.new_forward.evolver()
+    for agent in agents:
+      new_forward[agent] = new_forward[agent].set(meeting.time,meeting.mid)
+    new_backward = self.backward.set(meeting.mid,meeting)
+
+    new_requirements = self.unsatisfied.get(meeting.mid) - new_satisified
+    new_unsatisfied = self.unsatisfied.set(meeting.mid,new_requirements)
+
+    return self.copy(forward=new_forward.persistent(),backward=new_backward,
+                     unsatisfied=new_unsatisfied)
+
+  def remove_meeting(self,mid):
+    meeting = self.backward[mid]
+    new_forward = self.new_forward.evolver()
+    for agent in meeting.agents:
+      new_forward[agent] = new_forward[agent].remove(meeting.time)
+    new_backward = self.backward.remove(mid)
+    new_unsatisfied = self.unsatisfied.set(mid,meeting.requirements)
+
+    return self.copy(forward=new_forward.persistent(),backward=new_backward,
+                     unsatisfied=new_unsatisfied)
+
+  def schedule_satisfied(self):
+    return not len(self.unsatisfied)
+
+  def valid_updates(self):
+    valid = []
+    for meeting in self.unsatisfied:
+      for r in meeting.requirements:
+        result = r.valid_updates(self,meeting)
+        if result is not None: valid += result
+        else: return []
+
+    return valid
 
   @cached
   def schedule_cost(self):
@@ -177,132 +208,61 @@ class Schedule(object):
 
   @cached
   def tojson(self):
-    def setup_time(time,agent_times):
+    def setup_time(time,scheduled):
       result = time.JSONable()
-      result['available'] = time in agent_times
+      if scheduled is not None:
+        result['mid'] = scheduled
+      else:
+        result['mid'] = -1
       return result
 
-    valid_times = sorted(thaw(self.valid_times))
-    result = {'agents': self.agents,
-              'valid_times': valid_times,
-              'available_times': {a: [setup_time(t,ts) for t in valid_times]
-                                  for a,ts in self.times.iteritems()}}
+    result = {'agents': thaw(self.agents),
+              'times': thaw(self.times),
+              'meetings': {a: [setup_time(t,ts.get(t,default=None))
+                               for t in self.times]
+                           for a,ts in self.forward.iteritems()}}
     return json.dumps(result,cls=PRecordEncoder)
 
-  def json_update(self,obj):
-    new_agents = pvector(obj['agents'])
-    new_valid_times = pset(obj['valid_times'])
-    new_times = pmap({agent: pset([as_timerange(time)
-                                   for time in times
-                                   if time['available']])
-                      for agent,times in obj['times']})
-
-    # remove any meetings that with a no longer present agent
-    new_satisfied = self.satisfied.evolver()
-    new_unsatisfied = self.unsatisfied.evolver()
-    new_meetings = self.meetings.evolver()
-    for mid,requirements in (self.satisfied.iteritems() +
-                             self.unsatisfied.iteritems()):
-      for requirement in requirements:
-        for agent in requirement.agents:
-          if agent not in new_agents:
-            if isinstance(AllOfRequirement,requirement):
-              if mid in new_satisfied: new_satisfied.remove(mid)
-              if mid in new_unsatisfied: new_unsatisfied.remove(mid)
-              if mid in new_meetings: new_meetings.remove(mid)
-            if (isinstance(NOfRequirement,requirement) and
-                len(requirement.agents - agent) < requirement.N):
-              if mid in new_satisfied: new_satisfied.remove(mid)
-              if mid in new_unsatisfied: new_unsatisfied.remove(mid)
-              if mid in new_meetings: new_meetings.remove(mid)
-
-    # remove any meetings that now occur at an unavailable time
-    for mid,meeting in new_meetings:
-      if any(meeting.time not in new_times[agent]
-             for agent in meeting.agents):
-        if mid in new_satisfied:
-          new_unsatisfied
-
-  def add_time(self,time):
-    return self.copy()
-
-  def __repr__(self):
-    return ("Assigned Meetings:\n" +
-            "-----------------------\n" +
-            repr(self.meetings) +
-            "\nTimes:\n" +
-            "-----------------------\n" +
-            repr(self.times) +
-            "\nUnsatisfied:\n" +
-            "-----------------------\n" +
-            repr(self.unsatisfied) +
-            "\nsatisfied:\n" +
-            "-----------------------\n" +
-            repr(self.satisfied))
-
-  def available(self,a,time):
-    return time in self.times[a]
-
-  def add_meeting_time(self,mid,agents,time,requirement):
-    meeting = Meeting(mid,agents,time)
-    return self.__add_helper(meeting,requirement)
-
-  def add_agent_to_meeting(self,mid,agent,requirement):
-    meeting = self.meetings.get(mid,default=None)
-    meeting.set(agents=meeting.agents.add(agent))
-
-    return self.__add_helper(meeting,requirement)
-
-  def __add_helper(self,meeting,requirement):
-    new_meetings = self.meetings.set(meeting.mid,meeting)
-    new_times = self.times.evolver()
-    for a in meeting.agents: new_times = new_times[a] - meeting.time
-
-    if requirement.satisfied():
-      old_value = self.satisfied.get(self.mid,default=pset([]))
-      new_satisfied = self.satisfied.set(self.mid,old_value.add(requirement))
-
-      new_value = self.unsatisfied.get(self.mid) - requirement
-      if len(new_value):
-        new_unsatisfied = self.unsatisfied.set(self.mid,new_value)
-      else:
-        new_unsatisfied = self.unsatisfied.remove(self.mid)
+  def lookup_meeting(self,mid):
+    if mid in self.backward:
+      return self.backward[mid]
     else:
-      new_unsatisfied = self.unsatisfied
-      new_satisfied = self.satisfied
+      return self.unsatisfied[mid]
 
-    return self.copy(meetings=new_meetings,times=new_times.persistent(),
-                     satisfied=new_satisfied,unsatisfied=new_unsatisfied)
+  def mids(self):
+    return self.backward.keys() + self.unsatisfied.keys()
 
-  def remove_meeting(self,mid):
-    meeting = self.meetings[mid]
+  def json_update(self,obj):
+    # reconstruct schedule information from json
+    new_agents = pvector(obj['agents'])
+    new_times = pset(map(as_timerange,obj['times']))
+    new_forward = pmap({a: pmap({as_timerange(t): t.mid
+                                 for t in obj['meetings'][a] if t.mid != -1})
+                        for a in new_agents})
 
-    new_meetings = self.meetings.remove(mid)
-    new_times = self.times.evolver()
-    for a in meeting.agents:
-      new_times[a] = new_times.get(a,default=pset([])).add(meeting.time)
+    mids = pset([mid for times in new_forward.values()
+                 for mid in times.values()])
 
-    requirements = self.satisfied[mid]
-    new_satisfied = self.satisfied.remove(mid)
-    new_unsatisfied = self.unsatisfied.set(mid,requirements)
+    # update organization of meetings
+    new_backward = pmap({mid: self.lookup_meeting(mid) for mid in mids})
+    new_unsatisfied = pmap({mid: self.lookup_meeting(mid) for mid in self.mids()
+                            if mid not in mids})
+    new_self = self.copy(agents=new_agents,times=new_times,forward=new_forward,
+                         backward=new_backward,unsatisifed=new_unsatisfied)
 
-    return self.copy(meetings=new_meetings,times=new_times.persistent(),
-                     satisfied=new_satisfied,unsatisfied=new_unsatisfied)
+    # move any meetings back to unsatisifed if they aren't satisified anymore
+    for meeting in new_self.backward.values():
+      if not meeting.satisified(new_self):
+        new_self = new_self.remove_meeting(meeting.mid)
 
-  def schedule_satisfied(self):
-    return not len(self.unsatisfied)
+    # remove any meetings that can never be satisified
+    final_unsatisfied = new_self.unsatisfied.evolver()
+    for meeting in new_self.unsatisfied.values():
+      if not meeting.satisifiable(new_self):
+        del final_unsatisfied[meeting.mid]
 
-  def valid_updates(self):
-    valid = []
-    for r in self.unsatisfied:
-      result = r.valid_updates()
-      if result: valid += result
-      else: return []
+    return new_self.copy(unsatisfied=final_unsatisfied.persistent())
 
-    return valid
-
-
-__empty = Schedule(agents=pvector([]),valid_times=pset({}),
-                   meetings=pmap({}),times=pmap({}),
-                   costs=pmap({}),unsatisified=pmap({}),
-                   satisfied=pmap({}))
+__empty = Schedule(agents=pvector([]),times=pset([]),
+                   forward=pmap({}),backward=pmap({}),
+                   unsatisfied=pmap({}),costs={})

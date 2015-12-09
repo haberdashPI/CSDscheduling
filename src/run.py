@@ -1,12 +1,11 @@
 import time
 from logging import DEBUG, FileHandler
 from schedule.view import app, show
-from schedule.parse import parse_file
-import schedule.view as view
-from schedule import TimeRange
+# from schedule.parse import parse_file
+from schedule import empty_schedule
 
 
-show(parse_file('../schedule2015.xlsx'))
+show(empty_schedule())
 
 app.logger.setLevel(DEBUG)
 app.logger.addHandler(FileHandler('flask.log'))
@@ -30,4 +29,4 @@ except ImportError:
   print "Opening browser"
   webbrowser.open("http://localhost:5000")
 
-  app.run(debug=True)
+  app.run()

@@ -28,19 +28,13 @@ def app_source(path):
 def request_data():
   return Response(schedule.tojson(),mimetype='application/json')
 
-@app.route('/update_data')
+
+@app.route('/update_data',methods=['POST'])
 def update_data():
   params = request.get_json()
-
   show(schedule.json_update(params))
-  return Response("{success: true}",mimetype='application/json')
+  return Response(schedule.tojson(),mimetype='application/json')
 
-@app.route("/toggle_availability",methods=['POST'])
-def toggle_availability():
-  params = request.get_json()
-  show(schedule.toggle_availability(params['agent'],
-       s.as_timerange(params['time'])))
-  return "success"
 
 # def data_stream():
 #   while True: yield 'data: %s\n\n' % data_queue.get()
