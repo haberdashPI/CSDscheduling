@@ -16,11 +16,13 @@
 <script src="bower_components/datatables/media/js/jquery.dataTables.min.js"></script>
 <script src="bower_components/angular-datatables/dist/angular-datatables.min.js"></script>  
 <script src="app.js"></script>
+<script src="focus.js"></script>
 
 <link rel="stylesheet" href="bower_components/html5-boilerplate/dist/css/normalize.css">
 <link rel="stylesheet" href="bower_components/html5-boilerplate/dist/css/main.css">
 <link rel="stylesheet" href="bower_components/datatables/media/css/jquery.dataTables.min.css">
 <link rel="stylesheet" href="app.css">
+
 <script src="bower_components/html5-boilerplate/dist/js/vendor/modernizr-2.8.3.min.js"></script>
 
 </head>
@@ -30,48 +32,69 @@
       <p class="browsehappy">You are using an <strong>outdated</strong> browser. Please <a href="http://browsehappy.com/">upgrade your browser</a> to improve your experience.</p>
       <![endif]-->
 
-      <div ng-controller="ScheduleController as control" id="schedule_list">
-        <table class="row-border hover" datatable="ng"
-               dt-options="control.options" dt-instance="control.dt">
-        <thead>
-          <tr>
-            <th/>
-            <th ng-repeat="time in schedule.times | orderBy : '-start' : true"
-                class="timerange">
-              {{ time.start | date:'h:mm a' : 'UTC'}}-
-              {{ time.end | date:'h:mm a' : 'UTC'}}
-            </th>
-            <th>
-              <button ng-hide="adding_time" ng-click="adding_time = true">
-                Add Time Slot
-              </button>
-              <input ng-show="adding_time" type="text" ng-model="new_time"
-                     ng-keypress="control.newTime($event,new_time,-1)">
-              </input>
-            </th>
-        </tr>
-      </thead>
+<div ng-controller="ScheduleController as control" id="schedule_list">
+  <table class="row-border hover" datatable="ng"
+         dt-options="control.options" dt-instance="control.dt">
+  <thead>
+    <tr>
+      <th>
+      </th>
+      <th ng-repeat="time in schedule.times | orderBy : '-start' : true"
+          class="timerange">
+        {{ time.start | date:'h:mm a' : 'UTC'}}-
+        {{ time.end | date:'h:mm a' : 'UTC'}}
+      </th>
+      <th ng-repeat="i in range(10 - schedule.times.length)"
+          style="min-width: 1vw">
+          &nbsp
+      </th>
+      <th>
+        <button ng-hide="adding_time" ng-click="adding_time = true"
+                focus-on-not="adding_time" class="btn btn-primary">
+          Add Time Slot
+        </button>
+        <input ng-show="adding_time" type="text" ng-model="new_time"
+               focus-on="adding_time" 
+               ng-blur="adding_time=false"
+               ng-keypress="control.newTime($event,new_time,-1)">
+      </th>
+    </tr>
+    <tr>
+      <th>Name</th>
+      <th ng-repeat="time in schedule.times"/>
+      <th ng-repeat="i in range(10-schedule.times.length)"/>
+      <th/>
+    </tr>
+  </thead>
 
-      <tbody>
-        <tr ng-repeat="agent in schedule.agents">
-          <th>{{agent}}</th>
-          <td ng-repeat="time in schedule.meetings[agent]"
-              ng-class="{unavailable: time.mid == 0}"
-              ng-click="schedule.toggleAvailability(agent,time)"> 
-            <span ng-hide="time.available">
-              &#x2717
-            </span>
-          </td>
-        </tr>
+  <tbody>
+    <tr ng-repeat="agent in schedule.agents">
+      <th>{{agent}}</th>
+      <td ng-repeat="time in schedule.meetings[agent]"
+          ng-class="{unavailable: time.mid == 0}"
+          ng-click="schedule.toggleAvailability(agent,time)"> 
+        <span ng-hide="time.available">
+          &#x2717
+        </span>
+      </td>
+      <td ng-repeat="i in range(10 - schedule.times.length)">
+      &nbsp
+      </td>
+      <td>&nbsp</td>
+    </tr>
 
-        <tr>
-          <th><input type="text" ng-model="new_agent"
-                     ng-keypress="schedule.newAgent($event,new_agent)"></th>
-          <td ng-repeat="time in schedule.data.valid_times"/>
-        </tr>
-
+    <tr> 
+      <th>
+        <input type="text" ng-model="new_agent"
+               ng-keypress="control.newAgent($event,new_agent,-1)">
+      </th>
+      <td ng-repeat="time in schedule.times">&nbsp</td>
+      <td ng-repeat="i in range(10 - schedule.times.length)">&nbsp</td>
+      <td>&nbsp</td>
+    </tr>
   </tbody>
   </table>
-  </div>
+</div>
+
 </body>
 </html>

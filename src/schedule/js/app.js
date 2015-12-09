@@ -1,9 +1,11 @@
 // Declare app level module which depends on views, and components
-angular.module('CSDschedule',['datatables']).
-controller('ScheduleController',
+app = angular.module('CSDschedule',['datatables'])
+
+app.controller('ScheduleController',
            ['$scope','$filter','$http','DTOptionsBuilder','DTColumnDefBuilder',
             function($scope,$filter,$http,DTOptionsBuilder,DTColumnBuilder){
   var control = this
+  control.dt = {}
 
   // control.options = DTOptionsBuilder.newOptions()
   //   .withOption('paging',false)
@@ -16,7 +18,13 @@ controller('ScheduleController',
     .withOption('scrollY','60vh')
     .withOption('ordering',false)
 
-  control.dt = {}    
+  $scope.range = function(n){
+    if(n > 0){
+      result = new Array(n)
+      for(i=0;i<result.length;i++) result[i] = i
+      return result
+    }else return []
+  }
 
   // control.find_columns = function(){
   //   times = $filter('orderBy')(control.data.valid_times,'-start',true)
@@ -50,7 +58,7 @@ controller('ScheduleController',
           }
         })
       })
-      console.log("Data udpated!")
+      console.log("Data updated!")
     },function(){
       console.error("Server failed to update!")
     })
@@ -65,22 +73,27 @@ controller('ScheduleController',
     control.updateData()
   }
 
-  control.newAgent = function(name,index){
-    if($scope.schedule.agents.indexOf(name) > 0){
-      alert("All names must be unique!")
-      return
-    }
+  control.newAgent = function(event,name,index){
+    if(event.keyCode == 13){
+      console.log("Entered!")
+      if($scope.schedule.agents.indexOf(name) > 0){
+        alert("All names must be unique!")
+        return
+      }
 
-    $scope.schedule.agents.splice(index,0,name)
-    $scope.schedule.meetings[agent] = 
-      $scope.schedule.meetings.map(function(time){
-        return {
-          start: time.start,
-          end: time.end,
-          mid: -1
-        }
-      })
-    control.updateData()
+      $scope.schedule.agents.splice(index,0,name)
+      $scope.schedule.meetings[name] = 
+        $scope.schedule.times.map(function(time){
+          return {
+            start: time.start,
+            end: time.end,
+            mid: -1
+          }
+        })
+
+      control.updateData()
+      new_agent = ""
+    }
   }
 
   control.parseTime = function(str){
@@ -94,7 +107,6 @@ controller('ScheduleController',
   }
 
   control.newTime = function(event,time,index){
-    console.log("pressed")
     if(event.keyCode == 13){
       console.log("ENTERED!")
       if(index == -1){
@@ -136,8 +148,9 @@ controller('ScheduleController',
       control.updateData()
       console.log("Updated!")
 
-      // necessary to change the number of columns
+      // update the model
       control.dt.rerender()
+      $scope.new_time = ""      
       $scope.adding_time = false
     }
   }
