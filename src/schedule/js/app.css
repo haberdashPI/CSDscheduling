@@ -65,21 +65,26 @@ th{
 }
 td{
   padding: 10px;
+  text-align: center;
 }
 
-td.selected{
+.allof{
+  background-color: red;
+  padding: 0.2em;
+  margin: 0.25em;
+  border-radius: 0.25em;
+}
+.oneof{
+  background-color: orange;
+  padding: 0.2em;
+  margin: 0.25em;
+  border-radius: 0.25em;
+}
+.meeting_list{
+  margin: 0.25em;
+}
+
+.highlighted{
   background-color: rgb(220,220,255)
-}
-
-.detail{
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  width: 100%;
-  z-index: 1;
-}
-
-.data{
-  height: 80%;
 }
 

@@ -33,6 +33,14 @@
       <![endif]-->
 
 <div ng-controller="ScheduleController as control" id="schedule_list">
+  <p>Working on file: 
+    <input type="text" ng-model="working_file">
+    <button ng-click="control.load_file(working_file)" class="btn">
+      Load File
+    </button>
+  </p>
+
+  <div>
   <table class="row-border hover" datatable="ng"
          dt-options="control.options" dt-instance="control.dt">
   <thead>
@@ -41,8 +49,16 @@
       </th>
       <th ng-repeat="time in schedule.times | orderBy : '-start' : true"
           class="timerange">
-        {{ time.start | date:'h:mm a' : 'UTC'}}-
-        {{ time.end | date:'h:mm a' : 'UTC'}}
+        <span ng-hide="is_editing_time" ng-click="is_editing_time=true"
+              focus-on-not="is_editing_time">
+          {{ time.start | date:'h:mm' : 'UTC'}}-
+          {{ time.end | date:'h:mm' : 'UTC'}}
+        </span>
+        <input type="text" ng-show="is_editing_time" focus-on="is_editing_time"
+               ng-model="edited_time" 
+               ng-focus="edited_time = control.time_to_string(time)"
+               ng-blur="is_editing_time=false"
+               ng-keypress="is_editing_time=!control.replace_time($event,time,edited_time)">
       </th>
       <th ng-repeat="i in range(10 - schedule.times.length)"
           style="min-width: 1vw">
@@ -53,10 +69,10 @@
                 focus-on-not="adding_time" class="btn btn-primary">
           Add Time Slot
         </button>
-        <input ng-show="adding_time" type="text" ng-model="new_time"
+        <input ng-show="adding_time" type="text" ng-model="added_time"
                focus-on="adding_time" 
                ng-blur="adding_time=false"
-               ng-keypress="control.newTime($event,new_time,-1)">
+               ng-keypress="control.new_time($event,added_time)">
       </th>
     </tr>
     <tr>
@@ -69,11 +85,15 @@
 
   <tbody>
     <tr ng-repeat="agent in schedule.agents">
-      <th>{{agent}}</th>
-      <td ng-repeat="time in schedule.meetings[agent]"
+      <th ng-click="control.select_agent(agent,$index)"
+          ng-class="{highlighted: edit.mode.type == 'agent' && 
+                                  edit.mode.index == $index}">
+        {{agent}}
+      </th>
+      <td ng-repeat="time in schedule.meetings[agent] | orderBy : '-start' : true"
           ng-class="{unavailable: time.mid == 0}"
-          ng-click="schedule.toggleAvailability(agent,time)"> 
-        <span ng-hide="time.available">
+          ng-click="control.schedule_click(agent,time)"> 
+        <span ng-show="time.mid == 0">
           &#x2717
         </span>
       </td>
@@ -86,7 +106,8 @@
     <tr> 
       <th>
         <input type="text" ng-model="new_agent"
-               ng-keypress="control.newAgent($event,new_agent,-1)">
+               ng-keypress="control.new_agent($event,new_agent,
+                                             schedule.agents.length)">
       </th>
       <td ng-repeat="time in schedule.times">&nbsp</td>
       <td ng-repeat="i in range(10 - schedule.times.length)">&nbsp</td>
@@ -94,6 +115,82 @@
     </tr>
   </tbody>
   </table>
+  </div>
+
+  <!-- List of all meetings and their requirements -->
+  <!-- TODO: list meeting time and name, if available -->
+  <ul style="overflow:scroll; height: 27vh; width: 60vw; float: right;"
+      id="meetings">
+    <li ng-repeat="(mid,requirements) in schedule.requirements"
+        class="meeting_list" 
+        ng-attr-id="{{'meeting' + mid}}"
+        ng-class="{highlighted: edit.mode.mid == mid}"
+        ng-click="edit.mode = {type: 'meetings', adding: true, mid: mid, 
+                               mandatory: true}">
+    Meeting {{mid}}:
+    <span ng-repeat="(type,r) in requirements">
+      <span ng-repeat="agent in r.agents" ng-class="type"
+            ng-click="control.remove_agent_requirement(agent,type,mid)">
+          {{agent}}
+      </span>
+    </span>
+    </li>
+  </ul>
+
+  <div ng-switch="edit.mode.type">
+    <button ng-click="edit.mode = {type: 'meetings'}" 
+            ng-show="edit.mode.type === 'meetings' && edit.mode.adding">
+      Done
+    </button>
+
+    <button ng-click="edit.mode = {type: 'meetings', adding: true, 
+                                   mandatory: true}"
+            ng-show="!edit.mode.adding">
+      Add Meeting
+    </button>
+
+    <button ng-click="control.remove_meeting(edit.mode.mid)"
+            ng-show="edit.mode.mid">
+      Remove Meeting
+    </button>
+
+    <div ng-switch-when="meetings">
+      <div ng-show="edit.mode.adding">
+        <p>Creating meeting... click on people's names above to add them, click
+        on them in the meeting description to remove them.</p>
+
+        <p>Requirement Type:</p>
+        <input type="radio" ng-model="edit.mode.mandatory" ng-value="true">
+        <span class="allof"> Mandatory</span>
+        <input type="radio" ng-model="edit.mode.mandatory" ng-value="false">
+        <span class="oneof"> One of</span>
+      </div>
+    </div>
+    <div ng-switch-when="agent">
+      <p>
+        <b ng-hide="is_agent_edit" ng-click="is_agent_edit=true">
+          {{edit.mode.agent}}
+        </b>
+        <!-- TODO: make this pattern I'm using a directive -->
+        <input type="text" ng-show="is_agent_edit" focus-on="is_agent_edit"
+               ng-model="rename_agent"  ng-focus="rename_agent = edit.mode.agent"
+               ng-blur="is_agent_edit=false"
+               ng-keypress="control.rename_agent($event,edit.mode,rename_agent)">
+
+        <button ng-click="control.reorder_agent(edit.mode,-1)" class="btn"
+                ng-disabled="edit.mode.index == 0">
+          Up
+        </button>
+        <button ng-click="control.reorder_agent(edit.mode,+1)" class="btn"
+                ng-disabled="edit.mode.index == schedule.agents.length-1">
+          Down
+        </button>
+      </p>
+    </div>
+    
+    <div ng-switch-default>
+    </div>
+  </div>
 </div>
 
 </body>

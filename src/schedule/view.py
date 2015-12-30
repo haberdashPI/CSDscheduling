@@ -1,10 +1,9 @@
-from flask import Flask, send_from_directory, redirect, Response, request
+from flask import (Flask, send_from_directory, redirect, Response, request,
+                   jsonify)
 import os
 import schedule as s
-from Queue import Queue, Empty
 
 app = Flask("schedule")
-data_queue = Queue()
 js_root = os.path.dirname(os.path.abspath(s.__file__))+'/js'
 schedule = s.empty_schedule()
 
@@ -32,8 +31,20 @@ def request_data():
 @app.route('/update_data',methods=['POST'])
 def update_data():
   params = request.get_json()
-  show(schedule.json_update(params))
+  show(s.read_json(params['schedule']))
+  if 'working_file' in params:
+    schedule.save(params['working_file'])
   return Response(schedule.tojson(),mimetype='application/json')
+
+
+@app.route('/load_file',methods=['POST'])
+def load_file():
+  params = request.get_json()
+  if os.path.isfile(params['file']):
+    show(s.read_schedule(params['file']))
+    return Response(schedule.tojson(),mimetype='application/json')
+
+  return jsonify(nofile=True)
 
 
 # def data_stream():
