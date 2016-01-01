@@ -81,8 +81,66 @@ app.controller('ScheduleController',
     })
   }
 
+  control.add_allof_time = function(mid,time){
+    // remove old meeting location (if present)
+    angular.forEach($scope.schedule.meetings,function(times){
+      angular.forEach(times,function(t){
+        if(t.mid == mid) t.mid = -1
+      })
+    })        
+
+    // add new meeting location
+    var requirement = $scope.schedule.requirements[mid]
+    var meetings = 
+    angular.forEach(requirement.allof.agents,function(agent){
+      var times = $scope.schedule.meetings[agent]
+      var t = control.get_time(times,time)
+      t.mid = mid
+    })
+  }
+
+  control.get_time = function(times,time){
+    return $.grep(times,function(t){return control.same_time(t,time)})[0]
+  }
+
+  control.add_oneof_time = function(mid,agent,time){
+    control.add_allof_time(mid,time)
+
+    // remove any old oneof agents
+    var requirement = $scope.schedule.requirements[$scope.edit.mode.mid]
+    angular.forEach(requirement.oneof.agents,function(agent){
+      var times = $scope.schedule.meetings[agent]
+      angular.forEach(times,function(t){
+        if(t.mid == $scope.edit.mode.mlist) t.mid = -1
+      })
+    })
+
+    // add the new one
+    t = control.get_time($scope.schedule.meetings[agent],time)
+    t.mid = $scope.edit.mode.mid
+  }
+
   control.schedule_click = function(agent,time){
-    if(time.mid == -1){
+    meeting_time = control.get_time($scope.schedule.meetings[agent],time)
+    if(meeting_time.mid > 0){
+      // select meeting requirements
+      $scope.edit.mode = 
+        {type: 'meetings', adding: true, mid: meeting_time.mid, mandatory: true}
+
+      // make the requirements visible
+      var mlist = angular.element('#meetings')
+      var meetingRow = angular.element('#meeting'+meeting_time.mid)
+      var scrollTo = mlist.scrollTop() + (meetingRow.offset().top - mlist.offset().top)
+      mlist.animate({scrollTop: scrollTo},400)
+    }else if($scope.edit.mode.mid){
+      if(control.is_valid_allof(agent,time)){
+        control.add_allof_time($scope.edit.mode.mid,time)
+        control.update_data()
+      }else if(control.is_valid_oneof(agent,time)){
+        control.add_oneof_time($scope.edit.mode.mid,agent,time)
+        control.update_data()
+      }
+    }else if(time.mid == -1){
       time.mid = 0
       control.update_data()
     }else if(time.mid == 0){
@@ -145,6 +203,58 @@ app.controller('ScheduleController',
     $scope.edit = {mode: {type: "meetings"}}
 
     control.update_data()
+  }
+
+  control.is_valid_allof_time = function(mid,time){
+    var requirement = $scope.schedule.requirements[mid]
+    if(!requirement.allof) return false
+    return requirement.allof.agents.every(function(agent){
+        var meeting = $.grep($scope.schedule.meetings[agent],function(t){
+          return control.same_time(time,t)
+        })[0]
+        return meeting.mid < 0 || meeting.mid == mid
+      })
+  }
+
+  control.is_valid_allof = function(agent,time){
+    var mode = $scope.edit.mode
+    if(mode.mid && $scope.schedule.requirements[mode.mid] &&
+       $scope.schedule.requirements[mode.mid].allof){
+      var requirement = $scope.schedule.requirements[mode.mid]
+      var has_agent = requirement.allof.agents.indexOf(agent) >= 0
+
+      return has_agent && control.is_valid_allof_time(mode.mid,time)
+    }else return false
+  }
+
+  control.is_valid_oneof = function(agent,time){
+    var mode = $scope.edit.mode
+    if(mode.mid && $scope.schedule.requirements[mode.mid] &&
+       $scope.schedule.requirements[mode.mid].oneof){
+      var requirement = $scope.schedule.requirements[mode.mid]
+      var has_agent = requirement.oneof.agents.indexOf(agent) >= 0
+
+      return has_agent && control.is_valid_allof_time(mode.mid,time)
+    }
+  }
+
+  control.select_requirements = function(mid){
+    $scope.edit.mode = 
+      {type: 'meetings', adding: true, mid: mid, mandatory: true}
+
+    var requirement = $scope.schedule.requirements[mid]
+    var agent = $.grep($scope.schedule.agents,function(agent){
+      return (requirement.oneof && 
+              requirement.oneof.agents.indexOf(agent) >= 0) ||
+             (requirement.allof && 
+              requirement.allof.agents.indexOf(agent) >= 0)
+    })[0]
+
+    var agentRowId = '#agent'+$scope.schedule.agents.indexOf(agent)
+    var agentRow = angular.element(agentRowId)
+    var dataScroll = angular.element('.dataTables_scrollBody')
+    var scrollTo = agentRow.prop('offsetTop') - dataScroll.height()/2
+    dataScroll.animate({scrollTop: scrollTo},400)
   }
 
   // $scope.$watchCollection("schedule.requirements",function(newr,oldr){
@@ -264,7 +374,7 @@ app.controller('ScheduleController',
 
   control.no_duplicate_times = function(time){
     duplicate = $.grep($scope.schedule.times,function(t){
-      control.same_time(t,time)
+      return control.same_time(t,time)
     })
     if(duplicate.length > 0){
       alert("All times must be unique!")

@@ -84,17 +84,25 @@
   </thead>
 
   <tbody>
-    <tr ng-repeat="agent in schedule.agents">
+    <tr ng-repeat="agent in schedule.agents"
+        ng-attr-id="{{'agent' + $index}}">
       <th ng-click="control.select_agent(agent,$index)"
           ng-class="{highlighted: edit.mode.type == 'agent' && 
                                   edit.mode.index == $index}">
         {{agent}}
       </th>
       <td ng-repeat="time in schedule.meetings[agent] | orderBy : '-start' : true"
-          ng-class="{unavailable: time.mid == 0}"
+          ng-class="{unavailable: time.mid == 0,
+                     valid_allof_time: control.is_valid_allof(agent,time),
+                     valid_oneof_time: control.is_valid_oneof(agent,time),
+                     meeting: time.mid >= 0,
+                     highlighted: time.mid == edit.mode.mid}"
           ng-click="control.schedule_click(agent,time)"> 
         <span ng-show="time.mid == 0">
           &#x2717
+        </span>
+        <span ng-show="time.mid > 0">
+          M{{time.mid}}
         </span>
       </td>
       <td ng-repeat="i in range(10 - schedule.times.length)">
@@ -125,8 +133,7 @@
         class="meeting_list" 
         ng-attr-id="{{'meeting' + mid}}"
         ng-class="{highlighted: edit.mode.mid == mid}"
-        ng-click="edit.mode = {type: 'meetings', adding: true, mid: mid, 
-                               mandatory: true}">
+        ng-click="control.select_requirements(mid)">
     Meeting {{mid}}:
     <span ng-repeat="(type,r) in requirements">
       <span ng-repeat="agent in r.agents" ng-class="type"

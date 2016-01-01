@@ -14,7 +14,7 @@ from copy import copy
 
 # TODO: work on seperating the scheudle constraints
 # from the schedule solution, so that I can have multiple
-# solutions in the same scheudle object.
+# solutions in the same scheudle object. 
 
 near_time = 25
 
@@ -227,6 +227,8 @@ def read_json(obj):
         if r.satisfied(schedule):
           new_unsatisfied = _mark_satisfied(new_unsatisfied,r)
     schedule.unsatisfied = new_unsatisfied
+
+    # TODO: check for any requirements that cannot be satisfied
 
     return schedule
 

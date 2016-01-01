@@ -80,6 +80,15 @@ td{
   margin: 0.25em;
   border-radius: 0.25em;
 }
+.valid_allof_time{
+  background-color: rgb(255,179,179);
+}
+.valid_oneof_time{
+  background-color: rgb(255,204,153);
+}
+.meeting{
+  background-color: rgb(220,220,220);
+}
 .meeting_list{
   margin: 0.25em;
 }
