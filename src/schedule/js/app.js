@@ -87,11 +87,7 @@ app.controller('ScheduleController',
 
   control.add_allof_time = function(mid,time){
     // remove old meeting location (if present)
-    angular.forEach($scope.schedule.meetings,function(times){
-      angular.forEach(times,function(t){
-        if(t.mid == mid) t.mid = -1
-      })
-    })        
+    control.remove_meeting_time(mid,time,true)
 
     // add new meeting location
     var requirement = $scope.schedule.requirements[mid]
@@ -101,9 +97,6 @@ app.controller('ScheduleController',
       t.mid = mid
     })
 
-    // mark all of requirement as satisfied
-    i = $scope.schedule.unsatisfied[mid].indexOf('allof')
-    $scope.schedule.unsatisfied[mid].splice(i,1)
   }
 
   control.get_time = function(times,time){
@@ -125,10 +118,15 @@ app.controller('ScheduleController',
     // add the new one
     t = control.get_time($scope.schedule.meetings[agent],time)
     t.mid = $scope.edit.mode.mid
+  }
 
-    // mark requirement as satisfied
-    i = $scope.schedule.unsatisfied[mid].indexOf('oneof')
-    $scope.schedule.unsatisfied[mid].splice(i,1)
+  control.remove_meeting_time = function(mid,time,child){
+    angular.forEach($scope.schedule.meetings,function(times){
+      angular.forEach(times,function(t){
+        if(t.mid == mid) t.mid = -1
+      })
+    })
+    if(!child) control.update_data()
   }
 
   control.schedule_click = function(agent,time){
@@ -246,8 +244,10 @@ app.controller('ScheduleController',
        $scope.schedule.requirements[mode.mid].oneof){
       var requirement = $scope.schedule.requirements[mode.mid]
       var has_agent = requirement.oneof.agents.indexOf(agent) >= 0
+      var meeting = control.get_time($scope.schedule.meetings[agent],time)
 
-      return has_agent && control.is_valid_allof_time(mode.mid,time)
+      return has_agent && (meeting.mid < 0 || meeting.mid == mode.mid) &&
+        control.is_valid_allof_time(mode.mid,time)
     }
   }
 
@@ -257,10 +257,9 @@ app.controller('ScheduleController',
 
     var requirement = $scope.schedule.requirements[mid]
     var agent = $.grep($scope.schedule.agents,function(agent){
-      return (requirement.oneof && 
-              requirement.oneof.agents.indexOf(agent) >= 0) ||
-             (requirement.allof && 
-              requirement.allof.agents.indexOf(agent) >= 0)
+      if(requirement.oneof)
+        return requirement.oneof.agents.indexOf(agent) >= 0
+      else return requirement.allof.agents.indexOf(agent) >= 0
     })[0]
 
     var agentRowId = '#agent'+$scope.schedule.agents.indexOf(agent)

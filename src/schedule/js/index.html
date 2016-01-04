@@ -166,6 +166,11 @@
       Remove Meeting
     </button>
 
+    <button ng-click="control.remove_meeting_time(edit.mode.mid)"
+            ng-show="edit.mode.mid">
+      Clear Meeting Time
+    </button>
+
     <div ng-switch-when="meetings">
       <div ng-show="edit.mode.adding">
         <p>Creating meeting... click on people's names above to add them, click
