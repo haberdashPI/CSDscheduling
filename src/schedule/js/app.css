@@ -1,40 +1,5 @@
 /* app css stylesheet */
 
-.menu {
-  list-style: none;
-  border-bottom: 0.1em solid black;
-  margin-bottom: 2em;
-  padding: 0 0 0.5em;
-}
-
-.menu:before {
-  content: "[";
-}
-
-.menu:after {
-  content: "]";
-}
-
-.menu > li {
-  display: inline;
-}
-
-.menu > li:before {
-  content: "|";
-  padding-right: 0.3em;
-}
-
-.menu > li:nth-child(1):before {
-  content: "";
-  padding: 0;
-}
-
-tr.odd-row{
-  background-color: rgb(240,240,255);
-}
-tr.odd-row > td.unavailable{
-  background-color: rgb(230,230,255);
-}
 td.unavailable{
   text-align: center;
   background-color: rgb(245,245,245);
@@ -44,19 +9,6 @@ th.timerange{
   text-align: center;
   font-weight: normal;
   font-size: 0.8em;
-}
-
-th.highlight{
-  border-style: solid;
-}
-
-td.rowlight{
-  border-top-style: solid;
-  border-bottom-style: solid;
-}
-td.collight{
-  border-right-style: solid;
-  border-left-style: solid;
 }
 
 th{
@@ -74,12 +26,23 @@ td{
   margin: 0.25em;
   border-radius: 0.25em;
 }
+.allof.satisfied{
+  background-color: rgb(255,179,179);
+  text-decoration: line-through;
+  color: gray;
+}
 .oneof{
   background-color: orange;
   padding: 0.2em;
   margin: 0.25em;
   border-radius: 0.25em;
 }
+.oneof.satisfied{
+  background-color: rgb(255,204,153);
+  text-decoration: line-through;
+  color: gray;  
+}
+
 .valid_allof_time{
   background-color: rgb(255,179,179);
 }

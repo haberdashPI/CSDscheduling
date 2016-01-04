@@ -92,17 +92,17 @@ class OneOfRequirement(object):
 
   def satisfied(self,schedule):
     return (self.mid in schedule.backward and
-            len(self.agents | schedule.backward[self.mid].agents))
+            len(self.agents & schedule.backward[self.mid].agents))
 
   def satisfiable(self,schedule):
-    return len(self.agents | pset(schedule.agents))
+    return len(self.agents & pset(schedule.agents))
 
   def __repr__(self):
     return "OneOfRequirement("+repr(self.mid)+","+repr(self.agents)+")"
 
   def JSONable(self):
-    return {'mid': self.mid, 'agents': sorted(list(self.agents)), 
-           'type': self.type}
+    return {'mid': self.mid, 'agents': sorted(list(self.agents)),
+            'type': self.type}
 
 
 class AllOfRequirement(object):
@@ -137,10 +137,10 @@ class AllOfRequirement(object):
 def read_jsonable_requirement(obj):
   if obj['type'] == "allof":
     if len(obj['agents']):
-      return AllOfRequirement(obj['mid'],obj['agents'])
+      return AllOfRequirement(int(obj['mid']),obj['agents'])
   elif obj['type'] == "oneof":
     if len(obj['agents']):
-      return OneOfRequirement(obj['mid'],obj['agents'])
+      return OneOfRequirement(int(obj['mid']),obj['agents'])
   else:
     raise RuntimeError("Unknown requirement type: "+str(obj['type']))
 
@@ -202,7 +202,7 @@ def read_json(obj):
     # reconstruct schedule information from json
     agents = pvector(obj['agents'])
     times = pset(map(as_timerange,obj['times']))
-    forward = pmap({a: pmap({as_timerange(t): t['mid']
+    forward = pmap({a: pmap({as_timerange(t): int(t['mid'])
                              for t in obj['meetings'][a] if t['mid'] != -1})
                     for a in agents})
 
@@ -213,8 +213,8 @@ def read_json(obj):
       mids = mids.remove(0)
 
     # update meetings and their requirements
-    requirements = pmap({mid: pmap({r['type']: read_jsonable_requirement(r)
-                                    for r in rs.values()})
+    requirements = pmap({int(mid): pmap({r['type']: read_jsonable_requirement(r)
+                                        for r in rs.values()})
                          for mid,rs in obj['requirements'].iteritems()})
 
     schedule = Schedule(agents=agents,times=times,forward=forward,
@@ -236,10 +236,11 @@ def read_json(obj):
 def _backward_from_forward(forward):
   backward = {}
   for agent,meetings in forward.iteritems():
-    for time,mid in meetings:
-      backward[mid] = \
-        backward.get(mid,Meeting(mid=mid,agents=pset([]),time=time))
-      backward[mid].set(agents=backward[mid].agents.add(agent))
+    for time,mid in meetings.iteritems():
+      if mid > 0:
+        backward[mid] = \
+          backward.get(mid,Meeting(mid=mid,agents=pset([]),time=time))
+        backward[mid] = backward[mid].set(agents=backward[mid].agents.add(agent))
   return pmap(backward)
 
 
@@ -264,7 +265,7 @@ class Schedule(object):
     #### the schedule itself
     self.forward = forward  # agents -> times -> meeting ids
 
-    # mids -> meeting (times, agents)
+    # mids -> meeting (time, agents)
     if backward is None: self.backward = _backward_from_forward(self.forward)
     else: self.backward = backward
 
@@ -342,6 +343,7 @@ class Schedule(object):
               'requirements': thaw({mid: {r.type: r for r in rs.values()}
                                     for mid,rs in
                                     self.requirements.iteritems()}),
+              'unsatisfied': thaw(self.unsatisfied),
               'meetings': {a: [setup_time(t,ts.get(t,default=-1))
                                for t in self.times]
                            for a,ts in self.forward.iteritems()}}

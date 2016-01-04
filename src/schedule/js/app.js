@@ -58,7 +58,9 @@ app.controller('ScheduleController',
         alert("No file found!")
       else{
         $scope.schedule = event.data
-        control.dt.rerender()
+        $timeout(function(){
+          control.dt.rerender()
+        })
         console.log("Loaded data!")
       }
     })
@@ -75,6 +77,8 @@ app.controller('ScheduleController',
           }
         })
       })
+      $scope.schedule.unsatisfied = event.data.unsatisfied
+
       console.log("Data updated!")
     },function(){
       console.error("Server failed to update!")
@@ -91,12 +95,15 @@ app.controller('ScheduleController',
 
     // add new meeting location
     var requirement = $scope.schedule.requirements[mid]
-    var meetings = 
     angular.forEach(requirement.allof.agents,function(agent){
       var times = $scope.schedule.meetings[agent]
       var t = control.get_time(times,time)
       t.mid = mid
     })
+
+    // mark all of requirement as satisfied
+    i = $scope.schedule.unsatisfied[mid].indexOf('allof')
+    $scope.schedule.unsatisfied[mid].splice(i,1)
   }
 
   control.get_time = function(times,time){
@@ -118,6 +125,10 @@ app.controller('ScheduleController',
     // add the new one
     t = control.get_time($scope.schedule.meetings[agent],time)
     t.mid = $scope.edit.mode.mid
+
+    // mark requirement as satisfied
+    i = $scope.schedule.unsatisfied[mid].indexOf('oneof')
+    $scope.schedule.unsatisfied[mid].splice(i,1)
   }
 
   control.schedule_click = function(agent,time){
@@ -183,35 +194,37 @@ app.controller('ScheduleController',
   }
 
   control.remove_agent_requirement = function(agent,type,mid){
-    requirement = $scope.schedule.requirements[mid]
-    i = requirement[type].agents.indexOf(agent)
-    if(i >= 0) requirement[type].agents.splice(i,1)
+    if(confirm("Remove "+agent+"?")){
+      requirement = $scope.schedule.requirements[mid]
+      i = requirement[type].agents.indexOf(agent)
+      if(i >= 0) requirement[type].agents.splice(i,1)
 
-    control.update_data()
+      control.update_data()
+    }
   }
 
   control.remove_meeting = function(mid){
-    delete $scope.schedule.requirements[mid]
-    angular.forEach($scope.schedule.meetings,function(agent){
-      angular.forEach(agent,function(time){
-        if(time.mid == mid){
-          time.mid == -1
-        }
+    if(confirm("Remove Meeting "+mid+"?")){
+      delete $scope.schedule.requirements[mid]
+      angular.forEach($scope.schedule.meetings,function(agent){
+        angular.forEach(agent,function(time){
+          if(time.mid == mid){
+            time.mid == -1
+          }
+        })
       })
-    })
 
-    $scope.edit = {mode: {type: "meetings"}}
+      $scope.edit = {mode: {type: "meetings"}}
 
-    control.update_data()
+      control.update_data()
+    }
   }
 
   control.is_valid_allof_time = function(mid,time){
     var requirement = $scope.schedule.requirements[mid]
     if(!requirement.allof) return false
     return requirement.allof.agents.every(function(agent){
-        var meeting = $.grep($scope.schedule.meetings[agent],function(t){
-          return control.same_time(time,t)
-        })[0]
+        var meeting = control.get_time($scope.schedule.meetings[agent],time)
         return meeting.mid < 0 || meeting.mid == mid
       })
   }
@@ -303,6 +316,42 @@ app.controller('ScheduleController',
     }
   }
 
+  control.remove_agent = function(agent){
+    if(confirm("This will remove any meetings "+agent+" must be a part of."+
+               " Is that OK?")){
+      if($scope.edit.mode === "agent" && $scope.edit.mode.agent === agent)
+        $scope.edit = {mode: {type: "none"}}
+
+      index = $scope.schedule.agents.indexOf(agent)
+      $scope.schedule.agents.splice(index,1)
+      delete $scope.schedule.meetings[agent]
+
+      remove_mids = []
+      angular.forEach($scope.schedule.requirements,function(reqs,index){
+        if(reqs.allof){
+          if(reqs.allof.agents.indexOf(agent) >= 0)
+            remove_mids.push(index)
+        }
+        if(reqs.oneof){
+          if((ai = reqs.oneof.agents.indexOf(agent)) >= 0)
+            reqs.oneof.agents.splice(ai,1)
+        }
+      })
+      angular.forEach(remove_mids,function(i){
+        delete $scope.schedule.requirements[i]
+      })
+
+      angular.forEach($scope.schedule.meetings,function(times){
+        angular.forEach(times,function(t){
+          if(remove_mids.indexOf(t.mid) >= 0)
+            t.mid = -1
+        })
+      })
+
+      control.update_data()
+    }
+  }
+
   control.rename_agent = function(event,edit_mode,newagent){
     if(event.keyCode == 13){
       edit_mode.agent = newagent
@@ -373,10 +422,7 @@ app.controller('ScheduleController',
   }
 
   control.no_duplicate_times = function(time){
-    duplicate = $.grep($scope.schedule.times,function(t){
-      return control.same_time(t,time)
-    })
-    if(duplicate.length > 0){
+    if(control.get_time($scope.schedule.times,time)){
       alert("All times must be unique!")
       return false
     }
@@ -385,6 +431,26 @@ app.controller('ScheduleController',
 
   control.replace_time = function(event,oldtime,newtime){
     if(event.keyCode == 13){
+      if(newtime === ""){
+        // remove the time if there's no new time
+        index = $.grep($scope.schedule.times,function(t){
+          control.same_time(t,oldtime)
+        })[1]
+        $scope.schedule.times.splice(index,1)
+
+        angular.forEach($scope.schedule.meetings,function(meetings){
+          index = $.grep(meetings,function(t){
+            control.same_time(t,oldtime)
+          })[1]
+          meetings.splice(index,1)
+        })
+
+        control.dt.rerender()
+        control.update_data()
+
+        return true
+      }
+
       if(!(newtime = control.parse_time_range(newtime))) return false
       if(!control.same_time(newtime,oldtime) &&
          !control.no_duplicate_times(newtime)) return false
@@ -419,7 +485,7 @@ app.controller('ScheduleController',
       $scope.schedule.times.splice(0,0,time_range)
       angular.forEach($scope.schedule.agents,function(agent){
         times = $scope.schedule.meetings[agent]
-        times.splice(index,0,{
+        times.splice(0,0,{
           start: time_range.start,
           end: time_range.end,
           mid: -1
