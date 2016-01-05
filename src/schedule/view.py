@@ -31,10 +31,15 @@ def request_data():
 @app.route('/update_data',methods=['POST'])
 def update_data():
   params = request.get_json()
-  show(s.read_json(params['schedule']))
-  if 'working_file' in params:
-    schedule.save(params['working_file'])
-  return Response(schedule.tojson(),mimetype='application/json')
+  try:
+    show(s.read_json(params['schedule']))
+    if 'working_file' in params:
+      schedule.save(params['working_file'])
+    return Response(schedule.tojson(),mimetype='application/json')
+
+  except s.RequirementException as e:
+    obj = schedule.tojson(ammend={'unsatisfiable_meeting': e.requirement.mid})
+    return Response(obj,mimetype='application/json')
 
 
 @app.route('/load_file',methods=['POST'])

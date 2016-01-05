@@ -70,16 +70,24 @@ app.controller('ScheduleController',
     $http.post('/update_data',{'schedule': $scope.schedule,
                                'working_file': $scope.working_file}).
     then(function(event){
-      angular.forEach(event.data.schedule,function(times,agent){
-        angular.forEach(times,function(time,index){
-          if(time.mid !== $scope.schedule.meetings[agent][index].mid){
-            $scope.schedule.meetings[agent][index].mid = mid
-          }
+      if((mid = event.data.unsatisfiable_meeting)){
+        alert("That change makes Meeting "+mid+" impossible to schedule!")
+        $scope.schedule = event.data
+        $timeout(function(){
+          control.dt.rerender()
         })
-      })
-      $scope.schedule.unsatisfied = event.data.unsatisfied
+      }else{
+        angular.forEach(event.data.schedule,function(times,agent){
+          angular.forEach(times,function(time,index){
+            if(time.mid !== $scope.schedule.meetings[agent][index].mid){
+              $scope.schedule.meetings[agent][index].mid = mid
+            }
+          })
+        })
+        $scope.schedule.unsatisfied = event.data.unsatisfied
 
-      console.log("Data updated!")
+        console.log("Data updated!")
+      }
     },function(){
       console.error("Server failed to update!")
     })

@@ -113,8 +113,8 @@ class AllOfRequirement(object):
 
   def valid_updates(self,schedule):
     meeting = Meeting(mid=self.mid,agents=None,time=None)
-    times = schedule.times - pset([t for a in schedule.agents
-                                   for t in a.keys()])
+    times = schedule.times - pset([t for a in self.agents
+                                   for t in schedule.forward[a].keys()])
     if len(times):
       return [schedule.add_meeting(meeting.set(time=t),self.agents,self)
               for t in times]
@@ -124,7 +124,10 @@ class AllOfRequirement(object):
             self.agents <= schedule.backward[self.mid].agents)
 
   def satisfiable(self,schedule):
-    return self.agents <= pset(schedule.agents)
+    times = schedule.times - pset([t for a in self.agents
+                                   for t in schedule.forward[a].keys()])
+    return (self.agents <= pset(schedule.agents) and len(times))
+
 
   def __repr__(self):
     return "AllOfRequirement("+repr(self.mid)+","+repr(self.agents)+")"
@@ -198,6 +201,12 @@ def read_schedule(file):
                     requirements=requirements)
 
 
+class RequirementException(Exception):
+  def __init__(self,requirement):
+    self.requirement = requirement
+    super(RequirementException,self).__init__("Unsatisfiable requirement " +
+                                              str(requirement))
+
 def read_json(obj):
     # reconstruct schedule information from json
     agents = pvector(obj['agents'])
@@ -226,9 +235,9 @@ def read_json(obj):
         r = schedule.requirements[mid][rtype]
         if r.satisfied(schedule):
           new_unsatisfied = _mark_satisfied(new_unsatisfied,r)
+        if not r.satisfiable(schedule):
+          raise RequirementException(r)
     schedule.unsatisfied = new_unsatisfied
-
-    # TODO: check for any requirements that cannot be satisfied
 
     return schedule
 
@@ -332,7 +341,7 @@ class Schedule(object):
                 for agent,times in self.times.items()])
 
   @cached
-  def tojson(self):
+  def __tojson_helper(self):
     def setup_time(time,scheduled):
       result = time.JSONable()
       result['mid'] = scheduled
@@ -347,6 +356,14 @@ class Schedule(object):
               'meetings': {a: [setup_time(t,ts.get(t,default=-1))
                                for t in self.times]
                            for a,ts in self.forward.iteritems()}}
+    return result
+
+  def tojson(self,ammend=None):
+    result = self.__tojson_helper()
+    if ammend is not None:
+      for key,value in ammend.iteritems():
+        result[key] = value
+
     return json.dumps(result,cls=PRecordEncoder)
 
   def save(self,file):
