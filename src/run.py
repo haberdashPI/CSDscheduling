@@ -1,11 +1,6 @@
 import time
 from logging import DEBUG, FileHandler
-from schedule.view import app, show
-# from schedule.parse import parse_file
-from schedule import Schedule
-
-
-show(Schedule())
+from schedule.view import app
 
 app.logger.setLevel(DEBUG)
 app.logger.addHandler(FileHandler('flask.log'))

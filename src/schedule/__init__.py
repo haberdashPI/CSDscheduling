@@ -16,21 +16,36 @@ from copy import copy
 # from the schedule solution, so that I can have multiple
 # solutions in the same scheudle object. 
 
-near_time = 25
+near_time = 50.0
 
 
 def time_density(times):
-  ts = np.array(t.start for t in times)
-  np.mean(scipy.spatial.pdist(ts,'cityblock'))
+  ts = np.array(sorted(t.start for t in times))
+  if len(ts) > 1:
+    d = np.diff(ts)
+    softmax = np.exp(d/(near_time*near_time))
+    return np.sum(d*(softmax/np.sum(softmax)))
+  return 0.0
+
+
+def sig(x,t,s):
+  return 1./(1+np.exp(-4*s*(x-t)))
 
 
 def time_sparsity(times):
-  ts = np.array(t.start for t in times)
-  dists = scipy.spatial.pdist(ts,'cityblock')
-  return np.mean(1.0 / (1.0+np.exp(-(near_time-dists))))
+  ts = np.array(sorted(t.start for t in times))
+  if len(ts) > 1:
+    d = np.diff(ts)
+    softmin = np.exp(-d/(near_time*near_time))
+    x = np.sum(d*(softmin/np.sum(softmin)))
+    return 0.5*near_time*sig(-x,-near_time,1./near_time)
+  return 0.0
 
 
-costs_fns = {'density': time_density, 'sparsity': time_sparsity}
+cost_fns = {'density': time_density,
+            'sparsity': time_sparsity,
+            'none': lambda xs: 0.0}
+
 
 __epoch = datetime.utcfromtimestamp(0)
 __epoch_base = datetime(2000,1,1)
@@ -67,7 +82,7 @@ class TimeRange(PRecord):
 
 
 def timestring(timerange):
-  timerange.start.strftime('%I:%M %p',)
+  timerange.start.strftime('%I:%M %p')
 
 
 class Meeting(PRecord):
@@ -181,66 +196,11 @@ def cached(fn):
   return cached_fn
 
 
-def empty_schedule():
-  return __empty
-
-
-def read_schedule(file):
-  with open(file,'rt') as f:
-    results = eval(f.read())
-    agents = results['agents']
-    times = results['times']
-    forward = results['forward']
-    backward = results['backward']
-    unsatisfied = results['unsatisfied']
-    requirements = results.get('requirements',pmap({}))
-    costs = results['costs']
-
-    return Schedule(agents=agents,times=times,forward=forward,
-                    backward=backward,costs=costs,unsatisfied=unsatisfied,
-                    requirements=requirements)
-
-
 class RequirementException(Exception):
   def __init__(self,requirement):
     self.requirement = requirement
     super(RequirementException,self).__init__("Unsatisfiable requirement " +
                                               str(requirement))
-
-def read_json(obj):
-    # reconstruct schedule information from json
-    agents = pvector(obj['agents'])
-    times = pset(map(as_timerange,obj['times']))
-    forward = pmap({a: pmap({as_timerange(t): int(t['mid'])
-                             for t in obj['meetings'][a] if t['mid'] != -1})
-                    for a in agents})
-
-    mids = pset([mid for ts in forward.values() for mid in ts.values()])
-
-    # remove the mid 0, which marks an empty meeting (for unavailable times)
-    if 0 in mids:
-      mids = mids.remove(0)
-
-    # update meetings and their requirements
-    requirements = pmap({int(mid): pmap({r['type']: read_jsonable_requirement(r)
-                                        for r in rs.values()})
-                         for mid,rs in obj['requirements'].iteritems()})
-
-    schedule = Schedule(agents=agents,times=times,forward=forward,
-                        requirements=requirements)
-
-    new_unsatisfied = schedule.unsatisfied
-    for mid,rs in schedule.unsatisfied.iteritems():
-      for rtype in rs:
-        r = schedule.requirements[mid][rtype]
-        if r.satisfied(schedule):
-          new_unsatisfied = _mark_satisfied(new_unsatisfied,r)
-        if not r.satisfiable(schedule):
-          raise RequirementException(r)
-    schedule.unsatisfied = new_unsatisfied
-
-    return schedule
-
 
 def _backward_from_forward(forward):
   backward = {}
@@ -323,7 +283,7 @@ class Schedule(object):
     return self.copy(forward=new_forward.persistent(),backward=new_backward,
                      unsatisfied=self.unsatisfied.set(mid,new_requirements))
 
-  def schedule_satisfied(self):
+  def satisfied(self):
     return not len(self.unsatisfied)
 
   def valid_updates(self):
@@ -336,12 +296,13 @@ class Schedule(object):
     return valid
 
   @cached
-  def schedule_cost(self):
-    return sum([costs_fns[self.costs[agent](times)]
-                for agent,times in self.times.items()])
+  def cost(self):
+    return sum([cost_fns[cost]([t for t in self.forward[agent]
+                                if self.forward[agent][t].mid != 0])
+                for agent,cost in self.costs.iteritems()])
 
   @cached
-  def __tojson_helper(self):
+  def _tojson_helper(self):
     def setup_time(time,scheduled):
       result = time.JSONable()
       result['mid'] = scheduled
@@ -353,28 +314,20 @@ class Schedule(object):
                                     for mid,rs in
                                     self.requirements.iteritems()}),
               'unsatisfied': thaw(self.unsatisfied),
+              'costs': thaw(self.costs),
               'meetings': {a: [setup_time(t,ts.get(t,default=-1))
                                for t in self.times]
                            for a,ts in self.forward.iteritems()}}
     return result
 
-  def tojson(self,ammend=None):
-    result = self.__tojson_helper()
-    if ammend is not None:
-      for key,value in ammend.iteritems():
-        result[key] = value
-
-    return json.dumps(result,cls=PRecordEncoder)
-
-  def save(self,file):
-    with open(file,'wb') as f:
-      pprint.pprint({'agents': self.agents,
-                     'times': self.times,
-                     'forward': self.forward,
-                     'backward': self.backward,
-                     'requirements': self.requirements,
-                     'unsatisfied': self.unsatisfied,
-                     'costs': self.costs},f)
+  def pprintable(self):
+    return {'agents': self.agents,
+            'times': self.times,
+            'forward': self.forward,
+            'backward': self.backward,
+            'requirements': self.requirements,
+            'unsatisfied': self.unsatisfied,
+            'costs': self.costs}
 
   def lookup_requirements(self,mid):
     return self.requirement[mid]
@@ -382,6 +335,70 @@ class Schedule(object):
   def mids(self):
     return self.requirements.keys()
 
-__empty = Schedule(agents=pvector([]),times=pset([]),
-                   forward=pmap({}),backward=pmap({}),
-                   unsatisfied=pmap({}),costs={})
+
+def read_problem(file):
+  with open(file,'rt') as f:
+    results = eval(f.read())
+
+  return ScheduleProblem([read_schedule(r) for r in results])
+
+def read_schedule(results):
+  agents = results['agents']
+  times = results['times']
+  forward = results['forward']
+  backward = results['backward']
+  unsatisfied = results['unsatisfied']
+  requirements = results.get('requirements',pmap({}))
+  costs = results['costs']
+
+  return Schedule(agents=agents,times=times,forward=forward,
+                  backward=backward,costs=costs,unsatisfied=unsatisfied,
+                  requirements=requirements)
+
+def read_problem_json(obj):
+  return ScheduleProblem([read_schedule_json(s) for s in obj])
+
+def read_schedule_json(obj):
+    # reconstruct schedule information from json
+    agents = pvector(obj['agents'])
+    costs = pmap(obj['costs'])
+    times = pset(map(as_timerange,obj['times']))
+    forward = pmap({a: pmap({as_timerange(t): int(t['mid'])
+                             for t in obj['meetings'][a] if t['mid'] != -1})
+                    for a in agents})
+
+    mids = pset([mid for ts in forward.values() for mid in ts.values()])
+
+    # remove the mid 0, which marks an empty meeting (for unavailable times)
+    if 0 in mids:
+      mids = mids.remove(0)
+
+    # update meetings and their requirements
+    requirements = pmap({int(mid): pmap({r['type']: read_jsonable_requirement(r)
+                                        for r in rs.values()})
+                         for mid,rs in obj['requirements'].iteritems()})
+
+    schedule = Schedule(agents=agents,times=times,forward=forward,
+                        requirements=requirements,costs=costs)
+
+    new_unsatisfied = schedule.unsatisfied
+    for mid,rs in schedule.unsatisfied.iteritems():
+      for rtype in rs:
+        r = schedule.requirements[mid][rtype]
+        if r.satisfied(schedule):
+          new_unsatisfied = _mark_satisfied(new_unsatisfied,r)
+        elif not r.satisfiable(schedule):
+          raise RequirementException(r)
+    schedule.unsatisfied = new_unsatisfied
+
+    return schedule  
+
+class ScheduleProblem(object):
+  def __init__(self,solutions=[Schedule()]):
+    self.solutions = solutions
+  def tojson(self,ammend=None):
+    return json.dumps({'schedules': [s._tojson_helper() for s in self.solutions],
+                       'ammend': ammend},cls=PRecordEncoder)
+  def save(self,file):
+    with open(file,'w') as f:
+      pprint.pprint([s.pprintable() for s in self.solutions],f)

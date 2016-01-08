@@ -55,6 +55,28 @@
          ng-keypress="control.new_time($event,added_time)">
   </div>
 
+  <p>
+  Schedule:
+
+  <span ng-repeat="i in range(control.schedules.length)">
+    <button ng-click="control.show_schedule(i)" 
+            ng-hide="i == control.schedule_index">
+    {{i}}
+    </button>
+    <span ng-show="i == control.schedule_index">
+    {{i}}
+    </span>
+  </span>
+  <button ng-click="control.copy_schedule(control.schedule_index)">
+  Copy {{control.schedule_index}}
+  </button>
+  <button ng-click="control.remove_schedule(control.schedule_index)"
+          ng-hide="control.schedules.length < 2">
+  Remove {{control.schedule_index}}
+  </button>
+
+  </p>
+
   <div>
   <table class="row-border hover" datatable="ng"
          dt-options="control.options" dt-instance="control.dt">
@@ -205,6 +227,18 @@
         <button ng-click="control.remove_agent(edit.mode.agent)" class="btn">
           Delete
         </button>
+      </p>
+      <p>
+        Scheduling preference:
+        <input type="radio" ng-model="schedule.costs[edit.mode.agent]" 
+               value="density" ng-change="control.update_data()">
+        Clustered times
+        <input type="radio" ng-model="schedule.costs[edit.mode.agent]" 
+               value="sparsity" ng-change="control.update_data()">
+        Spread out times
+        <input type="radio" ng-model="schedule.costs[edit.mode.agent]" 
+               value="none" ng-change="control.update_data()">
+        None
       </p>
     </div>
     

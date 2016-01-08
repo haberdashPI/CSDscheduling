@@ -2,16 +2,12 @@ from flask import (Flask, send_from_directory, redirect, Response, request,
                    jsonify)
 import os
 import schedule as s
+import numpy as np
+import tempfile
+from itertools import islice
 
 app = Flask("schedule")
 js_root = os.path.dirname(os.path.abspath(s.__file__))+'/js'
-schedule = s.empty_schedule()
-
-
-def show(sch):
-  global schedule
-  schedule = sch
-
 
 @app.route("/")
 def app_index():
@@ -23,33 +19,74 @@ def app_source(path):
   return send_from_directory(js_root,path)
 
 
-@app.route('/request_data')
+@app.route('/request_data',methods=['POST'])
 def request_data():
-  return Response(schedule.tojson(),mimetype='application/json')
+  params = request.get_json()
+  if 'newfile' in params:
+    return Response(s.ScheduleProblem().tojson())
+  elif os.path.isfile(params['file']):
+    return Response(s.read_problem(params['file']).tojson(),
+                    mimetype='application/json')
+  else:
+    return jsonify(nofile=True)
 
 
 @app.route('/update_data',methods=['POST'])
 def update_data():
   params = request.get_json()
   try:
-    show(s.read_json(params['schedule']))
+    problem = s.read_problem_json(params['schedules'])
     if 'working_file' in params:
-      schedule.save(params['working_file'])
-    return Response(schedule.tojson(),mimetype='application/json')
+      problem.save(params['working_file'])
+    else:
+      problem.save(tempfile.gettempdir() + '/' + 'schedule_problem')
+    return Response(problem.tojson(),mimetype='application/json')
 
   except s.RequirementException as e:
-    obj = schedule.tojson(ammend={'unsatisfiable_meeting': e.requirement.mid})
+    if 'working_file' in params and os.path.isfile(params['working_file']):
+      problem = s.read_problem(params['working_file'])
+    else:
+      problem = s.read_problem(tempfile.gettempdir() + '/' + 'schedule_problem')
+
+    obj = problem.tojson(ammend={'unsatisfiable_meeting': e.requirement.mid})
     return Response(obj,mimetype='application/json')
 
 
-@app.route('/load_file',methods=['POST'])
-def load_file():
-  params = request.get_json()
-  if os.path.isfile(params['file']):
-    show(s.read_schedule(params['file']))
-    return Response(schedule.tojson(),mimetype='application/json')
+def search(schedule,breadth):
+  paths = np.array(schedule for i in xrange(breadth))
+  queue = []
 
-  return jsonify(nofile=True)
+  while len(paths):
+    for i in xrange(len(paths)):
+      choices = []
+      for path in paths[i].valid_updates():
+        if path.satisfied(): yield path
+        else: choices.push(path)
+
+      costs = map(lambda x: x.cost(),choices)
+      softmax = np.exp(costs/(s.near_time*s.near_time))
+
+      paths[i] = np.random.choice(choices,p=softmax)
+
+
+@app.route('/request_solution')
+def request_solutions():
+  global solutions
+
+  params = request.get_json()
+  n_solutions = params['n_solutions']
+  breadth = params['breadth']
+
+  solutions = iter(search(schedule,breadth))
+
+  return Response([s.tojson() for s in islice(n_solutions,solutions)],
+                  mimetype='application/json')
+
+
+# TODO: implement retrieval of more solutions
+# TODO: implement retrieval of best solutions
+
+
 
 
 # def data_stream():

@@ -7,6 +7,8 @@ app.controller('ScheduleController',
   var control = this
   control.dt = {}
   $scope.edit = {mode: {type: "none"}}
+  control.schedules = []
+  $scope.schedule_index = -1
 
   // control.options = DTOptionsBuilder.newOptions()
   //   .withOption('paging',false)
@@ -42,9 +44,13 @@ app.controller('ScheduleController',
 
   // control.columns = control.find_columns()
 
-  $http.get('/request_data')
+  $http.post('/request_data',{newfile: true})
   .then(function(event){
-    $scope.schedule = event.data
+    control.schedule_index = 0
+    control.schedules = event.data.schedules
+
+    $scope.schedule = event.data.schedules[0]
+
     console.log("Loaded data!")
   },function(){
     console.error("Data load failed!")
@@ -52,45 +58,71 @@ app.controller('ScheduleController',
 
   control.load_file = function(file){
     console.log("loading...")
-    $http.post('/load_file',{file: file})
+    $http.post('/request_data',{file: file})
     .then(function(event){
       if(event.data.nofile)
         alert("No file found!")
       else{
-        $scope.schedule = event.data
-        $timeout(function(){
-          control.dt.rerender()
-        })
+        control.schedules = event.data.schedules
+        $scope.schedule = control.schedules[control.schedule_index]
+        // $timeout(function(){
+        //   control.dt.rerender()
+        // },100)
         console.log("Loaded data!")
       }
     })
   }
 
   control.update_data = function(){
-    $http.post('/update_data',{'schedule': $scope.schedule,
+    control.schedules[control.schedule_index] = $scope.schedule
+    $http.post('/update_data',{'schedules': control.schedules,
                                'working_file': $scope.working_file}).
     then(function(event){
-      if((mid = event.data.unsatisfiable_meeting)){
+      if(event.data.ammend &&
+         (mid = event.data.ammend.unsatisfiable_meeting)){
         alert("That change makes Meeting "+mid+" impossible to schedule!")
-        $scope.schedule = event.data
-        $timeout(function(){
-          control.dt.rerender()
-        })
+        control.schedules = event.data.schedules
+        $scope.schedule = control.schedules[control.schedule_index]
       }else{
-        angular.forEach(event.data.schedule,function(times,agent){
-          angular.forEach(times,function(time,index){
-            if(time.mid !== $scope.schedule.meetings[agent][index].mid){
-              $scope.schedule.meetings[agent][index].mid = mid
+        control.schedules = event.data.schedules
+        meetings = control.schedules[control.schedule_index].meetings
+        angular.forEach(meetings,function(times,agent){
+          angular.forEach(times,function(newtime){
+            viewtime = control.get_time($scope.schedule.meetings[agent],newtime)
+            if(newtime.mid !== viewtime.mid){
+              viewtime.mid = newtime.mid
             }
           })
         })
-        $scope.schedule.unsatisfied = event.data.unsatisfied
+        $scope.schedule.unsatisfied = control.schedules[control.schedule_index].unsatisfied
 
         console.log("Data updated!")
       }
     },function(){
       console.error("Server failed to update!")
     })
+  }
+
+  control.show_schedule = function(index){
+    control.schedule_index = index
+    $scope.schedule = control.schedules[control.schedule_index]
+    $timeout(function(){
+      control.dt.rerender()
+    },100)
+  }
+
+  control.copy_schedule = function(index){
+    control.schedules.push(control.schedules[index])
+    if(index == control.schedule_index)
+      control.show_schedule(control.schedules.length-1)
+    control.update_data()
+  }
+
+  control.remove_schedule = function(index){
+    control.schedules.splice(index,1)
+    if(index == control.schedule_index)
+      control.show_schedule(Math.min(control.schedules.length-1,index))
+    control.update_data()
   }
 
   control.add_allof_time = function(mid,time){
