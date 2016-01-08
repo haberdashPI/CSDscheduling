@@ -125,6 +125,34 @@ app.controller('ScheduleController',
     control.update_data()
   }
 
+  control.find_solution = function(index){
+    $scope.solve_message = "Awaiting solution..."
+    var num_steps = Object.keys($scope.schedule.requirements).length*2
+    $http.post('/request_solutions',{'n_solutions': 20, 'take_best': 5,
+                                     'max_cycles': num_steps*10*25,
+                                     'schedule': $scope.schedule}).
+    then(function(event){
+      solutions = event.data.schedules
+      if(solutions.length > 0){
+        $scope.solve_message = ""
+        control.schedules = control.schedules.concat(solutions)
+        $scope.schedule = control.schedules[control.schedule_index]
+        control.update_data()
+
+        alert("Solutions found: placing in schedules "+
+              ((control.schedules.length - solutions.length))+
+              " - "+
+              (control.schedules.length-1))
+
+      }else{
+        $scope.solve_message = ""        
+        alert("Could not find any solutions in time. Trying again might help...")
+      }
+    },function(){
+      console.error("Server failed to respond!")
+    })
+  }
+
   control.add_allof_time = function(mid,time){
     // remove old meeting location (if present)
     control.remove_meeting_time(mid,time,true)

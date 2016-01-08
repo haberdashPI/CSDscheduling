@@ -5,6 +5,7 @@ import schedule as s
 import numpy as np
 import tempfile
 from itertools import islice
+import sys
 
 app = Flask("schedule")
 js_root = os.path.dirname(os.path.abspath(s.__file__))+'/js'
@@ -51,44 +52,51 @@ def update_data():
     obj = problem.tojson(ammend={'unsatisfiable_meeting': e.requirement.mid})
     return Response(obj,mimetype='application/json')
 
+def softmin(xs):
+  ys = np.exp(-xs/(s.near_time*s.near_time))
+  return ys / np.sum(ys)
 
-def search(schedule,breadth):
-  paths = np.array(schedule for i in xrange(breadth))
-  queue = []
+def search(schedule,max_cycle):
+  path = schedule
+  for cycle in xrange(max_cycle):
+    print ".",
+    sys.stdout.flush()
 
-  while len(paths):
-    for i in xrange(len(paths)):
-      choices = []
-      for path in paths[i].valid_updates():
-        if path.satisfied(): yield path
-        else: choices.push(path)
+    choices = []
+    solutions = []
+    for step in path.valid_updates():
+      if step.satisfied(): solutions.append(step)
+      else: choices.append(step)
 
-      costs = map(lambda x: x.cost(),choices)
-      softmax = np.exp(costs/(s.near_time*s.near_time))
+    if len(solutions):
+      yield solutions[np.argmin(x.cost() for x in solutions)]
 
-      paths[i] = np.random.choice(choices,p=softmax)
+    if len(choices):
+      weights = softmin(np.array([x.cost() for x in choices]))
+      path = np.random.choice(choices,p=weights)
+    else:
+      path = schedule
 
 
-@app.route('/request_solution')
+@app.route('/request_solutions',methods=["POST"])
 def request_solutions():
-  global solutions
-
   params = request.get_json()
-  n_solutions = params['n_solutions']
-  breadth = params['breadth']
-
-  solutions = iter(search(schedule,breadth))
-
-  return Response([s.tojson() for s in islice(n_solutions,solutions)],
+  return Response(s.ScheduleProblem(request_solutions_helper(params)).tojson(),
                   mimetype='application/json')
 
+def request_solutions_helper(params):
+  n_solutions = params['n_solutions']
+  take_best = params['take_best']
+  max_cycles = params['max_cycles']
+  schedule = s.read_schedule_json(params['schedule'])
 
-# TODO: implement retrieval of more solutions
-# TODO: implement retrieval of best solutions
+  solutions = islice(sorted(islice(search(schedule,max_cycles),
+                                   n_solutions),
+                            key=lambda x: x.cost()),
+                     take_best)
 
-
-
-
+  return list(solutions)
+  
 # def data_stream():
 #   while True: yield 'data: %s\n\n' % data_queue.get()
 

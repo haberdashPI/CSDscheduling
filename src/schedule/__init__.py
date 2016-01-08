@@ -90,6 +90,9 @@ class Meeting(PRecord):
   agents = field()
   time = field()
 
+  def add_agents(self,agents):
+    return self.set(agents=self.agents + agents)
+
 
 class OneOfRequirement(object):
   def __init__(self,mid,agents):
@@ -100,7 +103,7 @@ class OneOfRequirement(object):
   def valid_updates(self,schedule):
     meeting = schedule.backward.get(self.mid,default=None)
     if meeting:
-      updates = [schedule.add_meeting(meeting,a,self)
+      updates = [schedule.add_meeting(meeting,[a],self)
                  for a in self.agents if schedule.available(a,meeting.time)]
       if len(updates): return updates
     else: return []
@@ -127,7 +130,7 @@ class AllOfRequirement(object):
     self.type = 'allof'
 
   def valid_updates(self,schedule):
-    meeting = Meeting(mid=self.mid,agents=None,time=None)
+    meeting = Meeting(mid=self.mid,agents=pvector([]),time=None)
     times = schedule.times - pset([t for a in self.agents
                                    for t in schedule.forward[a].keys()])
     if len(times):
@@ -258,15 +261,15 @@ class Schedule(object):
     return result
 
   def available(self,agent,time):
-    return time not in self.forward[agent][time]
+    return time not in self.forward[agent]
 
   def add_meeting(self,meeting,agents,requirement):
-    new_forward = self.new_forward.evolver()
+    new_forward = self.forward.evolver()
     for agent in agents:
       new_forward[agent] = new_forward[agent].set(meeting.time,meeting.mid)
-    new_backward = self.backward.set(meeting.mid,meeting)
+    new_backward = self.backward.set(meeting.mid,meeting.add_agents(agents))
 
-    new_unsatisfied = self.mark_satisfied(requirement)
+    new_unsatisfied = _mark_satisfied(self.unsatisfied,requirement)
 
     return self.copy(forward=new_forward.persistent(),backward=new_backward,
                      unsatisfied=new_unsatisfied)
@@ -288,17 +291,19 @@ class Schedule(object):
 
   def valid_updates(self):
     valid = []
-    for (mid,rtype),r in self.unsatisfied:
-      result = r.valid_updates(self)
-      if result is not None: valid += result
-      else: return []
+    for mid,types in self.unsatisfied.iteritems():
+      for t in types:
+        r = self.requirements[mid][t]
+        result = r.valid_updates(self)
+        if result is not None: valid += result
+        else: return []
 
     return valid
 
   @cached
   def cost(self):
     return sum([cost_fns[cost]([t for t in self.forward[agent]
-                                if self.forward[agent][t].mid != 0])
+                                if self.forward[agent][t] != 0])
                 for agent,cost in self.costs.iteritems()])
 
   @cached
@@ -319,6 +324,9 @@ class Schedule(object):
                                for t in self.times]
                            for a,ts in self.forward.iteritems()}}
     return result
+
+  def tojson(self):
+    return json.dumps(self._tojson_helper(),cls=PRecordEncoder)
 
   def pprintable(self):
     return {'agents': self.agents,
