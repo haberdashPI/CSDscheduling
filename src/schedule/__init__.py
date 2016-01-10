@@ -18,6 +18,16 @@ from copy import copy
 
 near_time = 50.0
 
+def softmin(xs):
+  ys = np.exp(-xs/(near_time*near_time))
+  s = np.sum(ys)
+  if s != 0: return ys / np.sum(ys)
+  else: return 1.0 / len(ys)
+
+def softmin(xs):
+  ys = np.exp(xs/(near_time*near_time))
+  s = np.sum(ys)
+  if s != 0: return ys / np.sum(ys)
 
 def time_density(times):
   ts = np.array(sorted(t.start for t in times))
@@ -300,11 +310,30 @@ class Schedule(object):
 
     return valid
 
-  @cached
+  def sample_update(self,m_weights={}):
+    mids = self.unsatisfied.keys()
+    weights = np.array([m_weights.get(mid,1.0) for mid in mids])
+    mid = mids[np.random.choice(len(mids),p=weights/np.sum(weights))]
+    types = self.unsatisfied[mid]
+    t = list(types)[np.random.choice(len(types))]
+    r = self.requirements[mid][t]
+    updates = r.valid_updates(self)
+
+    if updates is not None: 
+      if len(updates):
+        # costs = np.array([x.cost() for x in updates])
+        # return updates[np.random.choice(len(updates),p=softmin(costs))]
+        return mid,updates[np.random.choice(len(updates))]
+      else:
+        return self.sample_update()
+    else:
+      return mid,None
+
+  # @cached
   def cost(self):
-    return sum([cost_fns[cost]([t for t in self.forward[agent]
-                                if self.forward[agent][t] != 0])
-                for agent,cost in self.costs.iteritems()])
+    return sum([cost_fns[self.costs[agent]]([t for t in self.forward[agent]
+                                                   if self.forward[agent][t] != 0])
+                for agent in self.costs.keys()])
 
   @cached
   def _tojson_helper(self):

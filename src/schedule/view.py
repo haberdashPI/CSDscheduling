@@ -52,31 +52,27 @@ def update_data():
     obj = problem.tojson(ammend={'unsatisfiable_meeting': e.requirement.mid})
     return Response(obj,mimetype='application/json')
 
-def softmin(xs):
-  ys = np.exp(-xs/(s.near_time*s.near_time))
-  return ys / np.sum(ys)
-
 def search(schedule,max_cycle):
   path = schedule
+  last_mid = -1
+  meeting_weights = {}
   for cycle in xrange(max_cycle):
-    print ".",
-    sys.stdout.flush()
 
-    choices = []
-    solutions = []
-    for step in path.valid_updates():
-      if step.satisfied(): solutions.append(step)
-      else: choices.append(step)
-
-    if len(solutions):
-      yield solutions[np.argmin(x.cost() for x in solutions)]
-
-    if len(choices):
-      weights = softmin(np.array([x.cost() for x in choices]))
-      path = np.random.choice(choices,p=weights)
-    else:
+    mid,path = path.sample_update(meeting_weights)
+    if path is None: 
+      meeting_weights[last_mid] = meeting_weights.get(last_mid,1.0) + 1.0
+      print "meeting weights",meeting_weights
+      last_mid = -1
       path = schedule
+    elif path.satisfied():
+      print ":D"
+      sys.stdout.flush()
 
+      yield path
+      path = schedule
+      last_mid = -1
+    else:
+      last_mid = mid
 
 @app.route('/request_solutions',methods=["POST"])
 def request_solutions():
