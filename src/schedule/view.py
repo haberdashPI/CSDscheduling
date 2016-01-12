@@ -6,6 +6,7 @@ import numpy as np
 import tempfile
 from itertools import islice
 import sys
+from datetime import datetime, timedelta
 
 app = Flask("schedule")
 js_root = os.path.dirname(os.path.abspath(s.__file__))+'/js'
@@ -52,21 +53,25 @@ def update_data():
     obj = problem.tojson(ammend={'unsatisfiable_meeting': e.requirement.mid})
     return Response(obj,mimetype='application/json')
 
-def search(schedule,max_cycle):
+def search(schedule,max_time):
   path = schedule
   last_mid = -1
-  meeting_weights = {}
-  for cycle in xrange(max_cycle):
+  meeting_weights = {mid: sum([len(schedule.forward[a])
+                               for a in schedule.requirements[mid]['allof'].agents])
+                     for mid in schedule.unsatisfied.keys()}
+  wsum = sum(meeting_weights.values())
+  for k in meeting_weights:
+    meeting_weights[k] /= float(wsum)
 
+  end_time = datetime.now() + timedelta(0,max_time)
+  while datetime.now() < end_time:
     mid,path = path.sample_update(meeting_weights)
-    if path is None: 
-      meeting_weights[last_mid] = meeting_weights.get(last_mid,1.0) + 1.0
-      print "meeting weights",meeting_weights
+    if path is None:
+      meeting_weights[last_mid] = meeting_weights[last_mid] + 1.0
       last_mid = -1
       path = schedule
     elif path.satisfied():
-      print ":D"
-      sys.stdout.flush()
+      print "found!"
 
       yield path
       path = schedule
@@ -83,14 +88,11 @@ def request_solutions():
 def request_solutions_helper(params):
   n_solutions = params['n_solutions']
   take_best = params['take_best']
-  max_cycles = params['max_cycles']
+  max_time = params['max_time_s']
   schedule = s.read_schedule_json(params['schedule'])
 
-  solutions = islice(sorted(islice(search(schedule,max_cycles),
-                                   n_solutions),
-                            key=lambda x: x.cost()),
-                     take_best)
-
+  solutions = islice(sorted(islice(search(schedule,max_time),n_solutions),
+                            key=lambda x: x.cost()),take_best)
   return list(solutions)
   
 # def data_stream():

@@ -127,9 +127,8 @@ app.controller('ScheduleController',
 
   control.find_solution = function(index){
     $scope.solve_message = "Awaiting solution..."
-    var num_steps = Object.keys($scope.schedule.requirements).length*2
     $http.post('/request_solutions',{'n_solutions': 20, 'take_best': 5,
-                                     'max_cycles': num_steps*10*25,
+                                     'max_time_s': 60*2, // two minutes
                                      'schedule': $scope.schedule}).
     then(function(event){
       solutions = event.data.schedules
