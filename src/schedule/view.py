@@ -2,10 +2,10 @@ from flask import (Flask, send_from_directory, redirect, Response, request,
                    jsonify)
 import os
 import schedule as s
-import numpy as np
+import schedule.new_schedule as sn
 import tempfile
+import numpy as np
 from itertools import islice
-import sys
 from datetime import datetime, timedelta
 
 app = Flask("schedule")
@@ -25,9 +25,9 @@ def app_source(path):
 def request_data():
   params = request.get_json()
   if 'newfile' in params:
-    return Response(s.ScheduleProblem().tojson())
+    return Response(sn.FastScheduleProblem().tojson())
   elif os.path.isfile(params['file']):
-    return Response(s.read_problem(params['file']).tojson(),
+    return Response(sn.read_problem(params['file']).tojson(),
                     mimetype='application/json')
   else:
     return jsonify(nofile=True)
@@ -37,7 +37,7 @@ def request_data():
 def update_data():
   params = request.get_json()
   try:
-    problem = s.read_problem_json(params['schedules'])
+    problem = sn.read_problem_json(params['schedules'])
     if 'working_file' in params:
       problem.save(params['working_file'])
     else:
@@ -46,54 +46,74 @@ def update_data():
 
   except s.RequirementException as e:
     if 'working_file' in params and os.path.isfile(params['working_file']):
-      problem = s.read_problem(params['working_file'])
+      problem = sn.read_problem(params['working_file'])
     else:
-      problem = s.read_problem(tempfile.gettempdir() + '/' + 'schedule_problem')
+      problem = sn.read_problem(tempfile.gettempdir() + '/' + 'schedule_problem')
 
-    obj = problem.tojson(ammend={'unsatisfiable_meeting': e.requirement.mid})
+    obj = problem.tojson(ammend={'unsatisfiable_meeting': e.mids[e.mindex]})
+    return Response(obj,mimetype='application/json')
+  except sn.AvailableTimesException as e:
+    if 'working_file' in params and os.path.isfile(params['working_file']):
+      problem = sn.read_problem(params['working_file'])
+    else:
+      problem = sn.read_problem(tempfile.gettempdir() + '/' + 'schedule_problem')
+
+    obj = problem.tojson(ammend={'not_enough_times_agent': e.agents[e.aindex]})
     return Response(obj,mimetype='application/json')
 
+
+class FailedSearchException(Exception):
+  pass
+
+
 def search(schedule,max_time):
-  path = schedule
-  last_mid = -1
-  meeting_weights = {mid: sum([len(schedule.forward[a])
-                               for a in schedule.requirements[mid]['allof'].agents])
-                     for mid in schedule.unsatisfied.keys()}
-  wsum = sum(meeting_weights.values())
-  for k in meeting_weights:
-    meeting_weights[k] /= float(wsum)
-
+  miss_counts = np.ones(len(schedule.mids))
   end_time = datetime.now() + timedelta(0,max_time)
-  while datetime.now() < end_time:
-    mid,path = path.sample_update(meeting_weights)
-    if path is None:
-      meeting_weights[last_mid] = meeting_weights[last_mid] + 1.0
-      last_mid = -1
-      path = schedule
-    elif path.satisfied():
-      print "found!"
+  n_solutions = 0
 
-      yield path
-      path = schedule
-      last_mid = -1
+  while datetime.now() < end_time:
+    if schedule.satisfied():
+      yield schedule.copy()
+      n_solutions += 1
+      schedule.clear_meetings()
     else:
-      last_mid = mid
+      try:
+        schedule.sample_update(miss_counts)
+      except sn.RequirementException as e:
+        schedule.clear_meetings()
+        miss_counts[e.mindex] += 1
+
+  if n_solutions == 0:
+    raise FailedSearchException(schedule.mids,miss_counts)
+
 
 @app.route('/request_solutions',methods=["POST"])
 def request_solutions():
   params = request.get_json()
-  return Response(s.ScheduleProblem(request_solutions_helper(params)).tojson(),
-                  mimetype='application/json')
+  try:
+    return Response(sn.FastScheduleProblem(request_solutions_helper(params)).tojson(),
+                    mimetype='application/json')
+  except FailedSearchException as e:
+    # find the most difficult to schedule meetings
+    mids, counts = e.args
+    order = np.argsort(counts)
+    cpf = np.cumsum(counts[order])
+    cpf /= cpf[len(cpf)-1].astype('float_')
+    worst_mids = reversed([mids[i] for i in order[cpf > 0.05]])
+
+    return Response(sn.FastScheduleProblem([]).tojson(ammend=[worst_mids]))
+
 
 def request_solutions_helper(params):
   n_solutions = params['n_solutions']
   take_best = params['take_best']
   max_time = params['max_time_s']
-  schedule = s.read_schedule_json(params['schedule'])
+  schedule = sn.read_schedule_json(params['schedule'])
 
   solutions = islice(sorted(islice(search(schedule,max_time),n_solutions),
                             key=lambda x: x.cost()),take_best)
   return list(solutions)
+
   
 # def data_stream():
 #   while True: yield 'data: %s\n\n' % data_queue.get()

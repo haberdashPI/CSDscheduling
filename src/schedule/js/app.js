@@ -83,6 +83,12 @@ app.controller('ScheduleController',
         alert("That change makes Meeting "+mid+" impossible to schedule!")
         control.schedules = event.data.schedules
         $scope.schedule = control.schedules[control.schedule_index]
+      }else if(event.data.ammend &&
+               (agent = event.ammend.not_enough_times_agent)){
+        alert("There are too few times avaialable for "+agent+" to schedule"+
+              " all of their meetings")
+        control.schedules = event.data.schedules
+        $scope.schedule = control.schedules[control.schedule_index]
       }else{
         control.schedules = event.data.schedules
         meetings = control.schedules[control.schedule_index].meetings
@@ -126,9 +132,10 @@ app.controller('ScheduleController',
   }
 
   control.find_solution = function(index){
+    max_time = 30
     $scope.solve_message = "Awaiting solution..."
-    $http.post('/request_solutions',{'n_solutions': 20, 'take_best': 5,
-                                     'max_time_s': 60*2, // two minutes
+    $http.post('/request_solutions',{'n_solutions': 1000, 'take_best': 5,
+                                     'max_time_s': max_time, // 30 seconds
                                      'schedule': $scope.schedule}).
     then(function(event){
       solutions = event.data.schedules
@@ -145,7 +152,15 @@ app.controller('ScheduleController',
 
       }else{
         $scope.solve_message = ""        
-        alert("Could not find any solutions in time. Trying again might help...")
+        mids = $scope.ammend
+        if(mids.length > 5){
+          mids = mids.slice(0,5)
+        }
+        alert("Could not find anys solutions after trying for "+max_time+
+              " seconds. You might have better luck if you try again, "+
+              "but it's also possible there is no viable solution. "+
+              "The following meetings were particularly difficult"+
+              " to schedule: "+mids)
       }
     },function(){
       console.error("Server failed to respond!")

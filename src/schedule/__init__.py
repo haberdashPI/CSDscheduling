@@ -12,29 +12,25 @@ from copy import copy
 # midnight of Jan 1st 1970, so I have to convert between these two.
 
 
-# TODO: work on seperating the scheudle constraints
-# from the schedule solution, so that I can have multiple
-# solutions in the same scheudle object. 
-
-near_time = 50.0
-
-def softmin(xs):
-  ys = np.exp(-xs/(near_time*near_time))
+def softmin(xs,sd):
+  ys = np.exp(-xs/(sd*sd))
   s = np.sum(ys)
   if s != 0: return ys / np.sum(ys)
   else: return 1.0 / len(ys)
 
-def softmin(xs):
-  ys = np.exp(xs/(near_time*near_time))
+
+def softmax(xs,sd):
+  ys = np.exp(xs/(sd*sd))
   s = np.sum(ys)
   if s != 0: return ys / np.sum(ys)
 
+
 def time_density(times):
+  sd = times[1].end - times[0].start
   ts = np.array(sorted(t.start for t in times))
   if len(ts) > 1:
     d = np.diff(ts)
-    softmax = np.exp(d/(near_time*near_time))
-    return np.sum(d*(softmax/np.sum(softmax)))
+    return np.sum(d*softmax(d,sd))
   return 0.0
 
 
@@ -43,12 +39,12 @@ def sig(x,t,s):
 
 
 def time_sparsity(times):
+  sd = times[1].end - times[0].start
   ts = np.array(sorted(t.start for t in times))
   if len(ts) > 1:
     d = np.diff(ts)
-    softmin = np.exp(-d/(near_time*near_time))
-    x = np.sum(d*(softmin/np.sum(softmin)))
-    return 0.5*near_time*sig(-x,-near_time,1./near_time)
+    x = np.sum(d*softmin(d,sd))
+    return 0.5*sd*sig(-x,-sd,1./sd)
   return 0.0
 
 
@@ -64,6 +60,10 @@ __epoch_base = datetime(2000,1,1)
 def epoch_seconds(time):
   dt = __epoch_base + timedelta(minutes=time)
   return (dt - __epoch).total_seconds() * 1000.0
+
+def time_str(time):
+  dt = __epoch_base + timedelta(minutes=time)
+  return dt.strftime('%I:%M %p')
 
 
 __base = datetime.strptime("12:00am","%I:%M%p")
@@ -85,10 +85,13 @@ class TimeRange(PRecord):
     return self.start < other.start
 
   def JSONable(self):
-    obj = thaw(self)
-    obj['start'] = int(epoch_seconds(obj['start']))
-    obj['end'] = int(epoch_seconds(obj['end']))
+    obj = {}
+    obj['start'] = int(epoch_seconds(self.start))
+    obj['end'] = int(epoch_seconds(self.end))
     return obj
+
+  def __str__(self):
+    return time_str(self.start) + " - " + time_str(self.end)
 
 
 def timestring(timerange):
@@ -428,7 +431,7 @@ def read_schedule_json(obj):
           raise RequirementException(r)
     schedule.unsatisfied = new_unsatisfied
 
-    return schedule  
+    return schedule
 
 class ScheduleProblem(object):
   def __init__(self,solutions=[Schedule()]):
