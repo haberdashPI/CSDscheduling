@@ -1,3 +1,4 @@
+from numba import jit
 import numpy as np
 import schedule as sch
 import json
@@ -5,6 +6,32 @@ import json
 # TODO: read and write multiple schedules from a file (hdf5 probably)
 # TODO: perform functions as part of numba loop
 
+@jit(nopython=True)
+def time_sparsity(time_indices):
+  n_contiguous = 0
+  max_contiguous = 0
+  for i in range(1,len(time_indices)):
+    if time_indices[i] == time_indices[i-1]+1:
+      n_contiguous += 1
+    else:
+      if max_contiguous < n_contiguous:
+        max_contiguous = n_contiguous
+      n_contiguous = 0
+  return max_contiguous
+
+
+@jit(nopython=True)
+def time_density(time_indices):
+  n_noncontiguous = 0
+  for i in range(1,len(time_indices)):
+    if time_indices[i] != time_indices[i-1]+1:
+      n_noncontiguous += 1
+  return n_noncontiguous
+
+
+cost_fns = {'density': time_density,
+            'sparsity': time_sparsity,
+            'none': lambda xs: 0.0}
 
 def read_problem(file):
   with open(file,'r') as f:
@@ -89,9 +116,24 @@ class RequirementException(Exception):
     super(RequirementException,self).__init__(msg)
 
 
+def cached(fn):
+  cached_name = fn.__name__
+
+  def cached_fn(self,*args):
+    try:
+      return self.cache[cached_name]
+
+    except KeyError:
+      result = fn(self,*args)
+      self.cache[cached_name] = result
+      return result
+
+  return cached_fn
+
 
 class FastSchedule(object):
   def __init__(self,agents,costs,times,mids):
+    self.cache = {}
     self.agents = agents
     self.times = times
     self.mids = mids
@@ -187,6 +229,16 @@ class FastSchedule(object):
 
     result['costs'] = self.costs
 
+    result['cost_values'] = {}
+    for aindex,agent in enumerate(self.agents):
+      if agent in self.costs:
+        times = np.where(self.meetings[aindex,:] > 0)[0]
+        result['cost_values'][agent] = cost_fns[self.costs[agent]](times)
+      else:
+        result['cost_values'][agent] = 0
+
+    result['cost'] = self.cost()
+
     result['meetings'] = {}
     for aindex,agent in enumerate(self.agents):
       result['meetings'][agent] = []
@@ -201,12 +253,21 @@ class FastSchedule(object):
 
     return result
 
+  @cached
   def cost(self):
     cost = 0
+    # how much do all scheduled meetings cost?
     for i,agent in enumerate(self.agents):
-      times = [self.times[i] for i in self.meetings[i,:] >= 0]
       if agent in self.costs:
-        cost += sch.cost_fns[self.costs[agent]](times)
+        times = np.where(self.meetings[i,:] > 0)[0]
+        cost += cost_fns[self.costs[agent]](times)
+
+    # guess how much unsatisfied meetings will cost
+    unsatisfied = self.unsatisfied[:self.unsatisfied_len]
+    cost += np.sum(self.allof_len[unsatisfied])
+    cost += np.sum(self.oneof_len[unsatisfied] > 0)
+
+    return cost
 
   def satisfied(self):
     return self.unsatisfied_len == 0
@@ -237,8 +298,8 @@ class FastSchedule(object):
       if nmeetings > np.sum(self.meetings[aindex,:] != 0):
         raise AvailableTimesException(aindex,self.agents)
 
-
   def clear_meetings(self):
+    self.cache = {}
     self.meetings[:,:] = np.where(self.meetings == 0,0,-1)
     self.mtimes[:] = -1
     self.oneof_selected[:] = -1
@@ -257,8 +318,8 @@ class FastSchedule(object):
       unsatisfied = self.unsatisfied[:self.unsatisfied_len]
       one_option = np.where(self.possible_times_len[unsatisfied] == 1)[0]
       if len(one_option):
-        i = one_option[0]
-        mindex = self.unsatisfied[i]
+        unsatisfied_i = one_option[0]
+        mindex = self.unsatisfied[unsatisfied_i]
         tindex = self.possible_times[mindex,0]
 
       # otherwise, schedule a meeting weighted by  how few options it has (fewer
@@ -271,19 +332,26 @@ class FastSchedule(object):
           weights = weights/np.sum(weights) + miss_counts / np.max(miss_counts)
 
         weights = weights[self.unsatisfied[:self.unsatisfied_len]]
-        i = np.random.choice(self.unsatisfied_len,
-                             p=weights.astype('float_')/np.sum(weights))
-        mindex = self.unsatisfied[i]
+        unsatisfied_i = \
+          np.random.choice(self.unsatisfied_len,
+                           p=weights.astype('float_')/np.sum(weights))
+        mindex = self.unsatisfied[unsatisfied_i]
 
         # randomly select one of the possible times...
         times = self.possible_times[mindex,:self.possible_times_len[mindex]]
         tindex = np.random.choice(times)
     else:
-      i = np.where(mindex == self.unsatisfied[:self.unsatisfied_len])[0][0]
+      unsatisfied_i = \
+        np.where(mindex == self.unsatisfied[:self.unsatisfied_len])[0][0]
 
       # randomly select one of the possible times...
       times = self.possible_times[mindex,:self.possible_times_len[mindex]]
       tindex = np.random.choice(times)
+
+    return self.update_schedule(mindex,tindex,unsatisfied_i)
+
+  def update_schedule(self,mindex,tindex,unsatisfied_i):
+    self.cache = {}
 
     oneofs = self.oneof[mindex,:self.oneof_len[mindex]]
     allofs = self.allof[mindex,:self.allof_len[mindex]]
@@ -300,8 +368,8 @@ class FastSchedule(object):
       self.oneof_selected[mindex] = oneof
 
     # mark the meeting as satisfied
-    if i < self.unsatisfied_len-1:
-      self.unsatisfied[i] = self.unsatisfied[self.unsatisfied_len-1]
+    if unsatisfied_i < self.unsatisfied_len-1:
+      self.unsatisfied[unsatisfied_i] = self.unsatisfied[self.unsatisfied_len-1]
     self.unsatisfied_len -= 1
 
     # update the available times for the remaining, unscheduled meetings
@@ -332,6 +400,7 @@ class FastSchedule(object):
     return self
 
   def sample_remove(self,weights=None):
+    self.cache = {}
     # find all satisified meetings
     satisfied = np.where(self.oneof_selected >= 0)[0]
 

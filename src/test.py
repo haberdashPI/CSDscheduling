@@ -7,8 +7,8 @@ import schedule.new_schedule as sn
 with open("/Users/davidlittle/Downloads/console.json") as f:
   obj = json.load(f)
 
-sn.read_schedule_json(obj[1])
-# xs = view.request_solutions_helper(obj)
+# xs = sn.read_schedule_json(obj)
+xs = view.request_solutions_helper(obj)
 # xs = sn.read_schedule_json(obj[0])
 # x1 = xs.copy()
 # miss_counts = np.ones(len(x1.mids))

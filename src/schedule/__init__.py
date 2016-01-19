@@ -39,12 +39,12 @@ def sig(x,t,s):
 
 
 def time_sparsity(times):
-  sd = times[1].end - times[0].start
+  sd = times[0].end - times[0].start
   ts = np.array(sorted(t.start for t in times))
   if len(ts) > 1:
     d = np.diff(ts)
-    x = np.sum(d*softmin(d,sd))
-    return 0.5*sd*sig(-x,-sd,1./sd)
+    t = sig(-d,-2*sd,1.0/sd)
+    return np.sum(t*softmin(t,sd))*sd
   return 0.0
 
 

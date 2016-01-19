@@ -100,7 +100,9 @@ app.controller('ScheduleController',
             }
           })
         })
+        $scope.schedule.cost_values = control.schedules[control.schedule_index].cost_values
         $scope.schedule.unsatisfied = control.schedules[control.schedule_index].unsatisfied
+        $scope.schedule.cost = control.schedules[control.schedule_index].cost
 
         console.log("Data updated!")
       }
@@ -134,7 +136,7 @@ app.controller('ScheduleController',
   control.find_solution = function(index){
     max_time = 30
     $scope.solve_message = "Awaiting solution..."
-    $http.post('/request_solutions',{'n_solutions': 1000, 'take_best': 5,
+    $http.post('/request_solutions',{'breadth': 100, 'take_best': 5,
                                      'max_time_s': max_time, // 30 seconds
                                      'schedule': $scope.schedule}).
     then(function(event){

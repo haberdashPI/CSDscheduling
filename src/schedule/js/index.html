@@ -80,6 +80,7 @@
   </button>
   {{solve_message}}
 
+  Schedule cost: {{schedule.cost}}
   </p>
 
   <div>
@@ -244,6 +245,9 @@
         <input type="radio" ng-model="schedule.costs[edit.mode.agent]" 
                value="none" ng-change="control.update_data()">
         None
+      </p>
+      <p>
+        Scheduling cost: {{schedule.cost_values[edit.mode.agent]}}
       </p>
     </div>
     

@@ -66,25 +66,50 @@ class FailedSearchException(Exception):
   pass
 
 
-def search(schedule,max_time):
+def search(schedule,breadth,max_time):
   miss_counts = np.ones(len(schedule.mids))
   end_time = datetime.now() + timedelta(0,max_time)
+  solutions = [schedule.copy() for i in xrange(breadth)]
+  count = 0
   n_solutions = 0
 
   while datetime.now() < end_time:
-    if schedule.satisfied():
-      yield schedule.copy()
-      n_solutions += 1
-      schedule.clear_meetings()
-    else:
-      try:
-        schedule.sample_update(miss_counts)
-      except sn.RequirementException as e:
+    # find next step in solutions
+    count += 1
+    for schedule in solutions:
+      if schedule.satisfied():
+        yield schedule.copy()
+        n_solutions += 1
         schedule.clear_meetings()
-        miss_counts[e.mindex] += 1
+      else:
+        try:
+          schedule.sample_update(miss_counts)
+        except sn.RequirementException as e:
+          schedule.clear_meetings()
+          miss_counts[e.mindex] += 1
+
+    # every so often kill off bad solutions, either restarting the search
+    # or branching off from one of the better solutions.
+    # TODO: regularize costs by solution length
+    if count >= 10:
+      count = 0
+      costs = np.array([x.cost() for x in solutions])
+      med = np.median(costs)
+      topQ = np.percentile(costs,25)
+      best_solutions = filter(lambda x: x.cost() <= topQ,solutions)
+      for i in xrange(len(solutions)):
+        schedule = solutions[i]
+        if schedule.cost() > med:
+          if np.random.randint(1):
+            besti = np.random.randint(len(best_solutions))
+            solutions[i] = best_solutions[besti].copy()
+          else:
+            solutions[i].clear_meetings()
 
   if n_solutions == 0:
     raise FailedSearchException(schedule.mids,miss_counts)
+  else:
+    print "Found a total of:",n_solutions,"solutions."
 
 
 @app.route('/request_solutions',methods=["POST"])
@@ -105,13 +130,13 @@ def request_solutions():
 
 
 def request_solutions_helper(params):
-  n_solutions = params['n_solutions']
   take_best = params['take_best']
   max_time = params['max_time_s']
+  breadth = params['breadth']
   schedule = sn.read_schedule_json(params['schedule'])
 
-  solutions = islice(sorted(islice(search(schedule,max_time),n_solutions),
-                            key=lambda x: x.cost()),take_best)
+  solutions = islice(sorted(search(schedule,breadth,max_time),
+                     key=lambda x: x.cost()),take_best)
   return list(solutions)
 
   
