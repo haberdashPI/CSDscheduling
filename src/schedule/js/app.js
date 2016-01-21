@@ -1,14 +1,16 @@
 // Declare app level module which depends on views, and components
-app = angular.module('CSDschedule',['datatables'])
+app = angular.module('CSDschedule',['datatables','ngAnimate'])
 
 app.controller('ScheduleController',
-           ['$scope','$filter','$http','$timeout','DTOptionsBuilder','DTColumnDefBuilder',
-            function($scope,$filter,$http,$timeout,DTOptionsBuilder,DTColumnBuilder){
+           ['$scope','$filter','$http','$timeout','$document',
+            'DTOptionsBuilder','DTColumnDefBuilder',
+            function($scope,$filter,$http,$timeout,$document,
+                     DTOptionsBuilder,DTColumnBuilder){
   var control = this
   control.dt = {}
-  $scope.edit = {mode: {type: "none"}}
+  $scope.edit = {mode: {type: "none"}, hide_unselected: true}
   control.schedules = []
-  $scope.schedule_index = -1
+  $scope.schedule_index = 0
 
   // control.options = DTOptionsBuilder.newOptions()
   //   .withOption('paging',false)
@@ -103,6 +105,7 @@ app.controller('ScheduleController',
         $scope.schedule.cost_values = control.schedules[control.schedule_index].cost_values
         $scope.schedule.unsatisfied = control.schedules[control.schedule_index].unsatisfied
         $scope.schedule.cost = control.schedules[control.schedule_index].cost
+        $scope.schedule.meeting_agents = control.schedules[control.schedule_index].meeting_agents
 
         console.log("Data updated!")
       }
@@ -113,10 +116,22 @@ app.controller('ScheduleController',
 
   control.show_schedule = function(index){
     control.schedule_index = index
+    $scope.edit.mode = {type: "none"}
     $scope.schedule = control.schedules[control.schedule_index]
     $timeout(function(){
       control.dt.rerender()
     },100)
+  }
+
+  control.other_agent = function(mid,agent){
+    if($scope.schedule.meeting_agents){
+      agents = $scope.schedule.meeting_agents[mid]
+      if(agents && agents.length == 2){
+        i = agents.indexOf(agent)
+        return agents[1-i]
+      }
+    }
+    return false
   }
 
   control.copy_schedule = function(index){
@@ -175,12 +190,12 @@ app.controller('ScheduleController',
 
     // add new meeting location
     var requirement = $scope.schedule.requirements[mid]
+    $scope.schedule.meeting_agents[mid] = requirement.allof.agents.slice()
     angular.forEach(requirement.allof.agents,function(agent){
       var times = $scope.schedule.meetings[agent]
       var t = control.get_time(times,time)
       t.mid = mid
     })
-
   }
 
   control.get_time = function(times,time){
@@ -195,12 +210,13 @@ app.controller('ScheduleController',
     angular.forEach(requirement.oneof.agents,function(agent){
       var times = $scope.schedule.meetings[agent]
       angular.forEach(times,function(t){
-        if(t.mid == $scope.edit.mode.mlist) t.mid = -1
+        if(t.mid == $scope.edit.mode.mid) t.mid = -1
       })
     })
 
     // add the new one
     t = control.get_time($scope.schedule.meetings[agent],time)
+    $scope.schedule.meeting_agents[mid].push(agent)
     t.mid = $scope.edit.mode.mid
   }
 
@@ -249,6 +265,23 @@ app.controller('ScheduleController',
     return start_str + "-" + end_str
   }
 
+  $document.keydown(function(event){
+    if(event.keyCode === 16 && $scope.edit.mode.type == 'meetings'){
+      $scope.$apply(function(){
+        $scope.edit.mode.mandatory = !$scope.edit.mode.mandatory
+        $scope.edit.mode.shift_down = true
+      })
+    }
+  })
+  $document.keyup(function(event){
+    if(event.keyCode === 16 && $scope.edit.mode.type == 'meetings'){
+      $scope.$apply(function(){
+        $scope.edit.mode.mandatory = !$scope.edit.mode.mandatory
+        $scope.edit.mode.shift_down = false
+      })
+    }
+  })
+
   control.add_meeting_requirement = function(mid,agent,agent_index,
                                              is_mandatory){
     requirement = $scope.schedule.requirements[mid]
@@ -272,17 +305,16 @@ app.controller('ScheduleController',
       requirement.oneof.agents.push(agent)
     }
 
+    control.remove_meeting_time(mid,true)
     control.update_data()
   }
 
   control.remove_agent_requirement = function(agent,type,mid){
-    if(confirm("Remove "+agent+"?")){
-      requirement = $scope.schedule.requirements[mid]
+    requirement = $scope.schedule.requirements[mid]
       i = requirement[type].agents.indexOf(agent)
       if(i >= 0) requirement[type].agents.splice(i,1)
-
+      control.remove_meeting_time(mid,true)
       control.update_data()
-    }
   }
 
   control.remove_meeting = function(mid){
@@ -295,10 +327,8 @@ app.controller('ScheduleController',
           }
         })
       })
-
-      $scope.edit = {mode: {type: "meetings"}}
-
       control.update_data()
+      $scope.edit.mode = {type: "meetings"}
     }
   }
 
@@ -359,6 +389,26 @@ app.controller('ScheduleController',
   //   }
   // },true)
 
+  control.is_allof = function(mid,agent){
+    return ($scope.schedule.requirements[mid] &&
+            $scope.schedule.requirements[mid].allof &&
+            $scope.schedule.requirements[mid].allof.agents.indexOf(agent) >= 0)
+  }
+  control.is_oneof = function(mid,agent){
+
+    return ($scope.schedule.requirements[mid] &&
+            $scope.schedule.requirements[mid].oneof &&
+            $scope.schedule.requirements[mid].oneof.agents.indexOf(agent) >= 0)
+  }
+
+  control.is_agent_filtered = function(agent,index){
+    if($scope.edit.mode.adding && $scope.edit.mode.mid){
+      return !(control.is_allof($scope.edit.mode.mid,agent) ||
+               control.is_oneof($scope.edit.mode.mid,agent))
+    }
+    return false
+  }
+
   control.select_agent = function(agent,index){
     if($scope.edit.mode.type == "meetings" && 
        $scope.edit.mode.adding){
@@ -366,9 +416,14 @@ app.controller('ScheduleController',
         $scope.edit.mode.mid = 
          Math.max(0,...Object.keys($scope.schedule.requirements))+1
         
-      control.add_meeting_requirement($scope.edit.mode.mid,agent,index,
-                                      $scope.edit.mode.mandatory)
-
+      if(control.is_allof($scope.edit.mode.mid,agent)){
+        control.remove_agent_requirement(agent,'allof',$scope.edit.mode.mid)
+      }else if(control.is_oneof($scope.edit.mode.mid,agent)){
+        control.remove_agent_requirement(agent,'oneof',$scope.edit.mode.mid)
+      }else{
+        control.add_meeting_requirement($scope.edit.mode.mid,agent,index,
+                                        $scope.edit.mode.mandatory)
+      }
     }else if($scope.edit.mode.type === "agent" && 
              $scope.edit.mode.index === index){
       $scope.edit.mode = {type: 'none'}
@@ -377,7 +432,7 @@ app.controller('ScheduleController',
   }
 
   control.new_agent = function(event,name,index){
-    if(event.keyCode == 13){
+    if(event.keyCode === 13){
       console.log("Entered!")
       if($scope.schedule.agents.indexOf(name) > 0){
         alert("All names must be unique!")
@@ -403,7 +458,7 @@ app.controller('ScheduleController',
     if(confirm("This will remove any meetings "+agent+" must be a part of."+
                " Is that OK?")){
       if($scope.edit.mode === "agent" && $scope.edit.mode.agent === agent)
-        $scope.edit = {mode: {type: "none"}}
+        $scope.edit.mode = {type: "none"}
 
       index = $scope.schedule.agents.indexOf(agent)
       $scope.schedule.agents.splice(index,1)
@@ -436,7 +491,12 @@ app.controller('ScheduleController',
   }
 
   control.rename_agent = function(event,edit_mode,newagent){
-    if(event.keyCode == 13){
+    if(event.keyCode === 13){
+      if($scope.schedule.agents.indexOf(newagent) >= 0){
+        alert("There is already someone with that name!")
+        return
+      }
+
       edit_mode.agent = newagent
       oldagent = $scope.schedule.agents[edit_mode.index]
       $scope.schedule.agents[edit_mode.index] = newagent
@@ -448,6 +508,25 @@ app.controller('ScheduleController',
           i = req.agents.indexOf(oldagent)
           if(i >= 0) req.agents[i] = newagent
         })
+      })
+
+      angular.forEach(Object.keys($scope.schedule.cost_values),function(name){
+        if(name === oldagent){
+          $scope.schedule.cost_values[newagent] = $scope.schedule.cost_values[oldagent]
+          delete $scope.schedule.cost_values[oldagent]
+        }
+      })
+
+      angular.forEach(Object.keys($scope.schedule.costs),function(name){
+        if(name === oldagent){
+          $scope.schedule.costs[newagent] = $scope.schedule.costs[oldagent]
+          delete $scope.schedule.costs[oldagent]
+        }
+      })
+
+      angular.forEach($scope.schedule.meeting_agents,function(agents){
+        i = agents.indexOf(oldagent)
+        if(i >= 0) agents[i] = newagent
       })
 
       $scope.is_agent_edit = false
@@ -513,7 +592,7 @@ app.controller('ScheduleController',
   }
 
   control.replace_time = function(event,oldtime,newtime){
-    if(event.keyCode == 13){
+    if(event.keyCode === 13){
       if(newtime === ""){
         // remove the time if there's no new time
         index = $.grep($scope.schedule.times,function(t){
@@ -561,7 +640,7 @@ app.controller('ScheduleController',
   }
 
   control.new_time = function(event,time_range_str){
-    if(event.keyCode == 13){
+    if(event.keyCode === 13){
       if(!(time_range = control.parse_time_range(time_range_str))) return
       if(!control.no_duplicate_times(time_range)) return
 

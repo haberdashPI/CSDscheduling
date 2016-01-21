@@ -62,12 +62,12 @@ def read_schedule_json(obj):
   for mid,r in obj['requirements'].iteritems():
     mindex = mindices[mid]
     if 'allof' in r:
-      for i,agent in enumerate(r['allof']['agents']):
+      for i,agent in enumerate(np.unique(r['allof']['agents'])):
         schedule.allof[mindex,i] = aindices[agent]
       schedule.allof_len[mindex] = len(r['allof']['agents'])
 
     if 'oneof' in r:
-      for i,agent in enumerate(r['oneof']['agents']):
+      for i,agent in enumerate(np.unique(r['oneof']['agents'])):
         schedule.oneof[mindex,i] = aindices[agent]
       schedule.oneof_len[mindex] = len(r['oneof']['agents'])
 
@@ -89,8 +89,9 @@ def read_schedule_json(obj):
 
   unsatisfied = set(range(len(mids)))
   for mindex,mid in enumerate(mids):
-    if (mid not in obj['unsatisfied'] or
-        len(obj['unsatisfied'][mid]) == 0):
+    if (schedule.mtimes[mindex] >= 0 and
+        (schedule.oneof_len[mindex] == 0 or
+         schedule.oneof_selected[mindex] >= 0)):
       unsatisfied.remove(mindex)
   schedule.unsatisfied[:len(unsatisfied)] = sorted(unsatisfied)
   schedule.unsatisfied_len = len(unsatisfied)
@@ -228,6 +229,15 @@ class FastSchedule(object):
           result['unsatisfied'][mid].append('oneof')
 
     result['costs'] = self.costs
+
+    result['meeting_agents'] = {}
+    for mindex,mid in enumerate(self.mids):
+      result['meeting_agents'][mid] = []
+      for aindex in self.allof[mindex,:self.allof_len[mindex]]:
+        result['meeting_agents'][mid].append(self.agents[aindex])
+      if self.oneof_selected[mindex] > 0:
+        selected = self.agents[self.oneof_selected[mindex]]
+        result['meeting_agents'][mid].append(selected)
 
     result['cost_values'] = {}
     for aindex,agent in enumerate(self.agents):

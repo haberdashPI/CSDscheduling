@@ -13,6 +13,7 @@
 -->
 <script src="bower_components/jquery/dist/jquery.min.js"></script>
 <script src="bower_components/angular/angular.js"></script>
+<script src="bower_components/angular-animate/angular-animate.js"></script>
 <script src="bower_components/datatables/media/js/jquery.dataTables.min.js"></script>
 <script src="bower_components/angular-datatables/dist/angular-datatables.min.js"></script>  
 <script src="app.js"></script>
@@ -80,7 +81,11 @@
   </button>
   {{solve_message}}
 
-  Schedule cost: {{schedule.cost}}
+  Schedule cost: {{(schedule.cost || 0)}}
+
+  Hide people not in selected meeting:
+  <input type="checkbox" ng-model="edit.hide_unselected">
+
   </p>
 
   <div>
@@ -117,7 +122,9 @@
 
   <tbody>
     <tr ng-repeat="agent in schedule.agents"
-        ng-attr-id="{{'agent' + $index}}">
+        ng-attr-id="{{'agent' + $index}}"
+        class="animate-hide" 
+        ng-hide="edit.hide_unselected && control.is_agent_filtered(agent)">
       <th ng-click="control.select_agent(agent,$index)"
           ng-class="{highlighted: edit.mode.type == 'agent' && 
                                   edit.mode.index == $index}">
@@ -133,8 +140,14 @@
         <span ng-show="time.mid == 0">
           &#x2717
         </span>
-        <span ng-show="time.mid > 0">
-          M{{time.mid}}
+        <span ng-show="time.mid > 0"
+              ng-switch="control.other_agent(time.mid,agent)">
+          <span ng-switch-when="false">
+            M{{time.mid}}        
+          </span>
+          <span ng-switch-default>
+            {{control.other_agent(time.mid,agent).split(" ")[0]}}
+          </span>
         </span>
       </td>
       <td ng-repeat="i in range(10 - schedule.times.length)">
@@ -169,8 +182,7 @@
     Meeting {{mid}}:
     <span ng-repeat="(type,r) in requirements">
       <span ng-repeat="agent in r.agents" 
-            ng-class="[type,!(schedule.unsatisfied[mid].indexOf(type) >= 0) && 'satisfied']"
-            ng-click="control.remove_agent_requirement(agent,type,mid)">
+            ng-class="[type,!(schedule.unsatisfied[mid].indexOf(type) >= 0) && 'satisfied']">
           {{agent}}
       </span>
     </span>
@@ -201,14 +213,31 @@
 
     <div ng-switch-when="meetings">
       <div ng-show="edit.mode.adding">
-        <p>Creating meeting... click on people's names above to add them, click
-        on them in the meeting description to remove them.</p>
 
-        <p>Requirement Type:</p>
+        <p>
+        Creating meeting... click on people's names above or below to add 
+        them, click on them againt o remove them.
+        </p>
+
+        <p>
+          Requirement Type (shift toggles):
         <input type="radio" ng-model="edit.mode.mandatory" ng-value="true">
-        <span class="allof"> Mandatory</span>
+        <span class="allof">Mandatory</span>
         <input type="radio" ng-model="edit.mode.mandatory" ng-value="false">
         <span class="oneof"> One of</span>
+        </p>
+      </div>
+
+      <div style="overflow:scroll; height: 15vh; width: 36vw; float: left;"
+           ng-show="edit.mode.adding">
+      <span ng-repeat="agent in schedule.agents" 
+          ng-click="control.select_agent(agent,$index)"
+          ng-class="{unused_agent: true,
+                     allof: control.is_allof(edit.mode.mid,agent),
+                     oneof: control.is_oneof(edit.mode.mid,agent)}">
+            {{agent}}
+            <span ng-show="!$last">, </span>
+      </span>
       </div>
     </div>
     <div ng-switch-when="agent">
@@ -237,7 +266,7 @@
       <p>
         Scheduling preference:
         <input type="radio" ng-model="schedule.costs[edit.mode.agent]" 
-               value="density" ng-change="control.update_data()">
+               value="density" ng-change="control.update_data()"> 
         Clustered times
         <input type="radio" ng-model="schedule.costs[edit.mode.agent]" 
                value="sparsity" ng-change="control.update_data()">

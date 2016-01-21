@@ -15,7 +15,8 @@
     "**/.*"
   ],
   "dependencies": {
-    "angular": "~1.4.0",
+    "angular": "~1.4.9",
+    "angular-animate": "~1.4.9",
     "html5-boilerplate": "~5.2.0",
     "jquery": "~2.1.4"
   }

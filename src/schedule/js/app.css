@@ -18,6 +18,7 @@ th{
 td{
   padding: 10px;
   text-align: center;
+  font-size: 0.75em;
 }
 
 .allof{
@@ -42,6 +43,13 @@ td{
   text-decoration: line-through;
   color: gray;  
 }
+.unused_agent{
+  border-color: black;
+  border-width: 1px;
+  padding: 0.2em;
+  margin: 0.25em;
+  border-radius: 0.25em;
+}
 
 .valid_allof_time{
   background-color: rgb(255,179,179);
@@ -54,6 +62,51 @@ td{
 }
 .meeting_list{
   margin: 0.25em;
+}
+
+@keyframes slideout{
+  0% {transform: translate(0,0) scaleY(1); 
+       opacity: 1;
+       line-height: 1.2em;
+       height: 1.2em}
+  75% {transform: translate(100vw,0) scaleY(1); 
+       opacity: 1;
+       line-height: 1.2em;
+       height: 1.2em}
+  100% {transform: translate(100vw,0) scaleY(0); 
+        opacity: 0; 
+        line-height: 0em;
+        height: 0em;}
+}
+
+@keyframes slidein{
+  0% {transform: translate(-100vw,0) scaleY(0); 
+        opacity: 0; 
+        line-height: 0em;
+        height: 0em;}
+  25% {transform: translate(-100vw,0) scaleY(1); 
+       opacity: 1;
+       line-height: 1.2em;
+       height: 1.2em}
+  100% {transform: translate(0,0) scaleY(1); 
+       opacity: 1;
+       line-height: 1.2em;
+       height: 1.2em}
+}
+
+.animate-hide {
+  line-height: 1.2em;
+  height: 1.2em;
+  transform: scaleY(1);
+  transition: all;
+}
+
+.animate-hide.ng-hide-remove {
+  animation: slidein 0.75s;  
+}
+
+.animate-hide.ng-hide{
+  animation: slideout 0.75s;
 }
 
 .highlighted{

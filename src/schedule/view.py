@@ -44,7 +44,7 @@ def update_data():
       problem.save(tempfile.gettempdir() + '/' + 'schedule_problem')
     return Response(problem.tojson(),mimetype='application/json')
 
-  except s.RequirementException as e:
+  except sn.RequirementException as e:
     if 'working_file' in params and os.path.isfile(params['working_file']):
       problem = sn.read_problem(params['working_file'])
     else:
