@@ -94,18 +94,18 @@ td{
        height: 1.2em}
 }
 
-.animate-hide {
+.animate_hide {
   line-height: 1.2em;
   height: 1.2em;
   transform: scaleY(1);
   transition: all;
 }
 
-.animate-hide.ng-hide-remove {
+.animate_hide.ng-hide-remove {
   animation: slidein 0.75s;  
 }
 
-.animate-hide.ng-hide{
+.animate_hide.ng-hide{
   animation: slideout 0.75s;
 }
 

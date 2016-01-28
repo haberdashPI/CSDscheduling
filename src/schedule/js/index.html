@@ -14,8 +14,8 @@
 <script src="bower_components/jquery/dist/jquery.min.js"></script>
 <script src="bower_components/angular/angular.js"></script>
 <script src="bower_components/angular-animate/angular-animate.js"></script>
-<script src="bower_components/datatables/media/js/jquery.dataTables.min.js"></script>
-<script src="bower_components/angular-datatables/dist/angular-datatables.min.js"></script>  
+<!-- <script src="bower_components/datatables/media/js/jquery.dataTables.min.js"></script> -->
+<!-- <script src="bower_components/angular-datatables/dist/angular-datatables.min.js"></script>   -->
 <script src="app.js"></script>
 <script src="console_save.js"></script>
 <script src="focus.js"></script>
@@ -35,7 +35,8 @@
       <![endif]-->
 
 <div ng-controller="ScheduleController as control" id="schedule_list">
-
+<div style="position: fixed; top: 0, width: 100vw; height: 10vh; 
+            background-color: #ffffff; z-index: 100">
   <div style="float:left;">
     <p>Working on file
     <input type="text" ng-model="working_file">
@@ -87,10 +88,11 @@
   <input type="checkbox" ng-model="edit.hide_unselected">
 
   </p>
+  </div>
 
+  <div style="width: 100vw; height: 10vh"></div>
   <div>
-  <table class="row-border hover" datatable="ng"
-         dt-options="control.options" dt-instance="control.dt">
+  <table class="row-border hover">
   <thead>
     <tr>
       <th></th>
@@ -123,7 +125,7 @@
   <tbody>
     <tr ng-repeat="agent in schedule.agents"
         ng-attr-id="{{'agent' + $index}}"
-        class="animate-hide" 
+        ng-class="{animate_hide: edit.mode.type == 'meetings'}"
         ng-hide="edit.hide_unselected && control.is_agent_filtered(agent)">
       <th ng-click="control.select_agent(agent,$index)"
           ng-class="{highlighted: edit.mode.type == 'agent' && 
@@ -136,18 +138,18 @@
                      valid_oneof_time: control.is_valid_oneof(agent,time),
                      meeting: time.mid >= 0,
                      highlighted: time.mid == edit.mode.mid}"
-          ng-click="control.schedule_click(agent,time)"> 
+          ng-click="control.schedule_click(agent,time,$event)"
+          ng-mouseenter="show_time=true"
+          ng-mouseleave="show_time=false"> 
         <span ng-show="time.mid == 0">
           &#x2717
         </span>
-        <span ng-show="time.mid > 0"
-              ng-switch="control.other_agent(time.mid,agent)">
-          <span ng-switch-when="false">
-            M{{time.mid}}        
-          </span>
-          <span ng-switch-default>
-            {{control.other_agent(time.mid,agent).split(" ")[0]}}
-          </span>
+        <span ng-show="time.mid > 0">
+        {{control.meeting_name(time.mid,agent)}}
+        </span>
+        <span ng-show="time.mid < 0" 
+              ng-style="{opacity: 0+show_time }">
+          {{ time.start | date:'h:mm' : 'UTC'}}-{{ time.end | date:'h:mm' : 'UTC'}}
         </span>
       </td>
       <td ng-repeat="i in range(10 - schedule.times.length)">
@@ -170,6 +172,9 @@
   </table>
   </div>
 
+  <div style="width: 100vw; height: 30vh"></div>
+  <div style="position: fixed; bottom: 0; width: 100vw; height: 30vh; 
+              background-color: #ffffff">
   <!-- List of all meetings and their requirements -->
   <!-- TODO: list meeting time and name, if available -->
   <ul style="overflow:scroll; height: 27vh; width: 60vw; float: right;"
@@ -177,9 +182,12 @@
     <li ng-repeat="(mid,requirements) in schedule.requirements"
         class="meeting_list" 
         ng-attr-id="{{'meeting' + mid}}"
-        ng-class="{highlighted: edit.mode.mid == mid}"
-        ng-click="control.select_requirements(mid)">
-    Meeting {{mid}}:
+        ng-class="{highlighted: edit.mode.mid == mid,
+                   animate_hide: edit.mode.agent}"
+        ng-click="control.select_requirements(mid)"
+        ng-hide="edit.hide_unselected && control.is_meeting_filtered(mid)">
+    <input type="text" size="8" placeholder="Name"
+           ng-model="schedule.meeting_names[mid]">:
     <span ng-repeat="(type,r) in requirements">
       <span ng-repeat="agent in r.agents" 
             ng-class="[type,!(schedule.unsatisfied[mid].indexOf(type) >= 0) && 'satisfied']">
@@ -200,6 +208,9 @@
             ng-show="!edit.mode.adding">
       Add Meeting
     </button>
+    <button ng-click="control.remove_all_meeting_times()" ng-show="!edit.mode.adding">
+      Clear All Meeting Times
+    </button>
 
     <button ng-click="control.remove_meeting(edit.mode.mid)"
             ng-show="edit.mode.mid">
@@ -215,12 +226,12 @@
       <div ng-show="edit.mode.adding">
 
         <p>
-        Creating meeting... click on people's names above or below to add 
-        them, click on them againt o remove them.
+        Click on people's names above or below to add them to a meeting. 
+        Click on them again to remove them.
         </p>
 
         <p>
-          Requirement Type (shift toggles):
+          Requirement Type (alt key toggles):
         <input type="radio" ng-model="edit.mode.mandatory" ng-value="true">
         <span class="allof">Mandatory</span>
         <input type="radio" ng-model="edit.mode.mandatory" ng-value="false">
@@ -282,6 +293,7 @@
     
     <div ng-switch-default>
     </div>
+  </div>
   </div>
 </div>
 

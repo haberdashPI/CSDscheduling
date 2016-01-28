@@ -1,13 +1,13 @@
 // Declare app level module which depends on views, and components
-app = angular.module('CSDschedule',['datatables','ngAnimate'])
+app = angular.module('CSDschedule', ['ngAnimate']) //['datatables','ngAnimate'])
 
 app.controller('ScheduleController',
            ['$scope','$filter','$http','$timeout','$document',
-            'DTOptionsBuilder','DTColumnDefBuilder',
-            function($scope,$filter,$http,$timeout,$document,
-                     DTOptionsBuilder,DTColumnBuilder){
+            //'DTOptionsBuilder','DTColumnDefBuilder',
+            function($scope,$filter,$http,$timeout,$document){
+                     //DTOptionsBuilder,DTColumnBuilder){
   var control = this
-  control.dt = {}
+  // control.dt = {}
   $scope.edit = {mode: {type: "none"}, hide_unselected: true}
   control.schedules = []
   $scope.schedule_index = 0
@@ -17,11 +17,11 @@ app.controller('ScheduleController',
   //   .withOption('ordering',false)
   //   .withDisplayLength(30)
   //   .withFixedHeader({bottom: false})
-  control.options = DTOptionsBuilder.newOptions()
-    .withDOM('ft')
-    .withOption('paging',false)
-    .withOption('scrollY','40vh')
-    .withOption('ordering',false)
+  // control.options = DTOptionsBuilder.newOptions()
+  //   .withDOM('ft')
+  //   .withOption('paging',false)
+  //   .withOption('scrollY','40vh')
+  //   .withOption('ordering',false)
 
   $scope.range = function(n){
     if(n > 0){
@@ -30,19 +30,6 @@ app.controller('ScheduleController',
       return result
     }else return []
   }
-
-  // control.find_columns = function(){
-  //   times = $filter('orderBy')(control.data.valid_times,'-start',true)
-
-  //   defs = times .map(function(item,i){
-  //     start_str = $filter('date')(item.start,'h:mm','UTC')
-  //     end_str = $filter('date')(item.end,'h:mm','UTC')
-
-  //     return DTColumnDefBuilder.newColumn(i+1).withTitle(start_str+"-"+end_str)
-  //   })
-
-  //   return [DTColumnDefBuilder.newColumn(0).withTitle("")].concat(defs)
-  // }
 
   // control.columns = control.find_columns()
 
@@ -69,7 +56,7 @@ app.controller('ScheduleController',
         $scope.schedule = control.schedules[control.schedule_index]
         // $timeout(function(){
         //   control.dt.rerender()
-        // },100)
+        // },0)
         console.log("Loaded data!")
       }
     })
@@ -86,7 +73,7 @@ app.controller('ScheduleController',
         control.schedules = event.data.schedules
         $scope.schedule = control.schedules[control.schedule_index]
       }else if(event.data.ammend &&
-               (agent = event.ammend.not_enough_times_agent)){
+               (agent = event.data.ammend.not_enough_times_agent)){
         alert("There are too few times avaialable for "+agent+" to schedule"+
               " all of their meetings")
         control.schedules = event.data.schedules
@@ -114,24 +101,40 @@ app.controller('ScheduleController',
     })
   }
 
-  control.show_schedule = function(index){
-    control.schedule_index = index
-    $scope.edit.mode = {type: "none"}
-    $scope.schedule = control.schedules[control.schedule_index]
-    $timeout(function(){
-      control.dt.rerender()
-    },100)
+  function arraysEqual(a, b) {
+    if (a === b) return true;
+    if (a == null || b == null) return false;
+    if (a.length != b.length) return false;
+
+    for (var i = 0; i < a.length; ++i) {
+      if (a[i] !== b[i]) return false;
+    }
+    return true;
   }
 
-  control.other_agent = function(mid,agent){
-    if($scope.schedule.meeting_agents){
+  control.show_schedule = function(index){
+    control.schedule_index = index
+    old_times = $scope.schedule.times
+    $scope.edit.mode = {type: "none"}
+    $scope.schedule = control.schedules[control.schedule_index]
+    if(!arraysEqual(old_times,$scope.schedule.times)){
+      // $timeout(function(){
+      //   control.dt.rerender()
+      // },50)
+    }
+  }
+
+  control.meeting_name = function(mid,agent){
+    if((name = $scope.schedule.meeting_names[mid])){
+      return name
+    }else if($scope.schedule.meeting_agents){
       agents = $scope.schedule.meeting_agents[mid]
-      if(agents && agents.length == 2){
+      if(agent && agents && agents.length == 2){
         i = agents.indexOf(agent)
-        return agents[1-i]
+        return agents[1-i].split(" ")[0]
       }
     }
-    return false
+    return "M"+mid
   }
 
   control.copy_schedule = function(index){
@@ -149,7 +152,7 @@ app.controller('ScheduleController',
   }
 
   control.find_solution = function(index){
-    max_time = 30
+    max_time = 600
     $scope.solve_message = "Awaiting solution..."
     $http.post('/request_solutions',{'breadth': 100, 'take_best': 5,
                                      'max_time_s': max_time, // 30 seconds
@@ -186,7 +189,7 @@ app.controller('ScheduleController',
 
   control.add_allof_time = function(mid,time){
     // remove old meeting location (if present)
-    control.remove_meeting_time(mid,time,true)
+    control.remove_meeting_time(mid,true)
 
     // add new meeting location
     var requirement = $scope.schedule.requirements[mid]
@@ -220,7 +223,7 @@ app.controller('ScheduleController',
     t.mid = $scope.edit.mode.mid
   }
 
-  control.remove_meeting_time = function(mid,time,child){
+  control.remove_meeting_time = function(mid,child){
     angular.forEach($scope.schedule.meetings,function(times){
       angular.forEach(times,function(t){
         if(t.mid == mid) t.mid = -1
@@ -229,8 +232,29 @@ app.controller('ScheduleController',
     if(!child) control.update_data()
   }
 
-  control.schedule_click = function(agent,time){
+  control.remove_all_meeting_times = function(){
+    if(confirm("Are you sure you want to remove ALL meeting times??")){
+      angular.forEach($scope.schedule.meetings,function(times){
+        angular.forEach(times,function(t){
+          if(t.mid > 0) t.mid = -1
+        })
+      })
+      control.update_data()
+    }
+  }
+
+  control.schedule_click = function(agent,time,event){
     meeting_time = control.get_time($scope.schedule.meetings[agent],time)
+    // if(meeting_time.mid > 0 && event.shiftKey && $scope.edit.mode.mid &&
+    //    $scope.edit.mode.mid != meeting_time.mid){
+    //   toswitch_time = $.grep($scope.schedule.meetings[agent],function(t){
+    //     if(t.mid == $scope.edit.mode.mid) return t
+    //   })[1]
+    //   control.remove_meeting_time(meeting_time.mid,true)
+    //   control.remove_meeting_time($scope.edit.mode.mid,true)
+
+
+    // }
     if(meeting_time.mid > 0){
       // select meeting requirements
       $scope.edit.mode = 
@@ -266,7 +290,7 @@ app.controller('ScheduleController',
   }
 
   $document.keydown(function(event){
-    if(event.keyCode === 16 && $scope.edit.mode.type == 'meetings'){
+    if(event.keyCode === 18 && $scope.edit.mode.type == 'meetings'){
       $scope.$apply(function(){
         $scope.edit.mode.mandatory = !$scope.edit.mode.mandatory
         $scope.edit.mode.shift_down = true
@@ -274,7 +298,7 @@ app.controller('ScheduleController',
     }
   })
   $document.keyup(function(event){
-    if(event.keyCode === 16 && $scope.edit.mode.type == 'meetings'){
+    if(event.keyCode === 18 && $scope.edit.mode.type == 'meetings'){
       $scope.$apply(function(){
         $scope.edit.mode.mandatory = !$scope.edit.mode.mandatory
         $scope.edit.mode.shift_down = false
@@ -405,6 +429,14 @@ app.controller('ScheduleController',
     if($scope.edit.mode.adding && $scope.edit.mode.mid){
       return !(control.is_allof($scope.edit.mode.mid,agent) ||
                control.is_oneof($scope.edit.mode.mid,agent))
+    }
+    return false
+  }
+
+  control.is_meeting_filtered = function(mid){
+    if($scope.edit.mode.agent){
+      return !(control.is_allof(mid,$scope.edit.mode.agent) ||
+               control.is_oneof(mid,$scope.edit.mode.agent))
     }
     return false
   }
@@ -596,7 +628,7 @@ app.controller('ScheduleController',
       if(newtime === ""){
         // remove the time if there's no new time
         index = $.grep($scope.schedule.times,function(t){
-          control.same_time(t,oldtime)
+          return control.same_time(t,oldtime)
         })[1]
         $scope.schedule.times.splice(index,1)
 
@@ -607,7 +639,7 @@ app.controller('ScheduleController',
           meetings.splice(index,1)
         })
 
-        control.dt.rerender()
+        // control.dt.rerender()
         control.update_data()
 
         return true
@@ -629,7 +661,7 @@ app.controller('ScheduleController',
         })
       })
 
-      control.dt.rerender()
+      // control.dt.rerender()
 
       control.update_data()
       console.log("Updated!")
@@ -655,7 +687,7 @@ app.controller('ScheduleController',
       })
 
       // update the model
-      control.dt.rerender()
+      // control.dt.rerender()
       $scope.added_time = ""
       $scope.adding_time = false
 

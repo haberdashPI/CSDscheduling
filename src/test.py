@@ -4,11 +4,16 @@ import json
 import schedule.view as view
 import schedule.new_schedule as sn
 
-with open("/Users/davidlittle/Downloads/console.json") as f:
+# with open("/Users/davidlittle/Downloads/console.json") as f:
+#   obj = json.load(f)
+
+with open("2016Schedule") as f:
   obj = json.load(f)
 
-xs = sn.read_problem_json(obj['schedules'])
-xs.save('schedule2015.f.json')
+xs = sn.read_problem_json(obj)
+xs.solutions[0].to_csv('schedule2016.csv')
+# xs = sn.read_schedule_json(obj['schedules'][0])
+# xs.save('schedule2015.f.json')
 # xs = view.request_solutions_helper(obj)
 # xs = sn.read_schedule_json(obj[0])
 # x1 = xs.copy()

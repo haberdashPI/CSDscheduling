@@ -90,21 +90,34 @@ def search(schedule,breadth,max_time):
 
     # every so often kill off bad solutions, either restarting the search
     # or branching off from one of the better solutions.
-    # TODO: regularize costs by solution length
-    if count >= 10:
-      count = 0
-      costs = np.array([x.cost() for x in solutions])
-      med = np.median(costs)
-      topQ = np.percentile(costs,25)
-      best_solutions = filter(lambda x: x.cost() <= topQ,solutions)
-      for i in xrange(len(solutions)):
-        schedule = solutions[i]
-        if schedule.cost() > med:
-          if np.random.randint(1):
-            besti = np.random.randint(len(best_solutions))
-            solutions[i] = best_solutions[besti].copy()
-          else:
-            solutions[i].clear_meetings()
+    # TODO: regularize costs by solution length?
+    # if count >= 15:
+    #   count = 0
+    #   costs = np.array([x.cost() for x in solutions])
+    #   ranks = np.argsort(costs)
+    #   max_rank = np.max(ranks)
+    #   bias = float(max_rank) / 15.0
+
+    #   # kill of some of the solutions
+    #   killed = []
+    #   alive = set(range(len(solutions)))
+    #   for i,rank in zip(xrange(len(solutions)),ranks):
+    #     schedule = solutions[i]
+    #     if np.random.rand() < (float(rank) + bias) / (max_rank + bias):
+    #       solutions[i].clear_meetings()
+    #       killed.append(i)
+    #       alive.remove(i)
+
+    #   # duplicate some of the solutions
+    #   j = 0
+    #   for i in np.arange(len(alive)):
+    #     while np.random.randint(1):
+    #         j += 1
+    #     if j > len(killed):
+    #       break
+    #     rank = ranks[i]
+    #     if np.random.rand() > (float(rank) + bias) / (max_rank + bias):
+    #       solutions[killed[j]] = solutions[i].copy()
 
   if n_solutions == 0:
     raise FailedSearchException(schedule.mids,miss_counts)
@@ -127,7 +140,6 @@ def request_solutions():
     worst_mids = reversed([mids[i] for i in order[cpf > 0.05]])
 
     return Response(sn.FastScheduleProblem([]).tojson(ammend=[worst_mids]))
-
 
 def request_solutions_helper(params):
   take_best = params['take_best']

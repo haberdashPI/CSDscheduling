@@ -6,32 +6,80 @@ import json
 # TODO: read and write multiple schedules from a file (hdf5 probably)
 # TODO: perform functions as part of numba loop
 
+
+# number of adjacent elements
 @jit(nopython=True)
 def time_sparsity(time_indices):
   n_contiguous = 0
-  max_contiguous = 0
   for i in range(1,len(time_indices)):
     if time_indices[i] == time_indices[i-1]+1:
       n_contiguous += 1
-    else:
-      if max_contiguous < n_contiguous:
-        max_contiguous = n_contiguous
-      n_contiguous = 0
-  return max_contiguous
+  N = float(len(time_indices))
+  return n_contiguous + N*N/(4.*4.)
 
 
+# TODO: test
+@jit(nopython=True)
+def time_sparsity_add(time_indices,add_times,at_order):
+  j = 0
+  costs = np.zeros(len(add_times),np.float_)
+  if not len(add_times):
+    return costs
+  for i in range(0,len(time_indices)):
+    if (time_indices[i] == add_times[at_order[j]]-1 or
+        time_indices[i] == add_times[at_order[j]]+1):
+      costs[j] += 1.0
+    while time_indices[i] > add_times[at_order[j]]:
+      j += 1
+      if j >= len(at_order): return costs
+
+  return costs + float(len(time_indices))/4.0
+
+
+# number of non contigious blocks
 @jit(nopython=True)
 def time_density(time_indices):
   n_noncontiguous = 0
   for i in range(1,len(time_indices)):
     if time_indices[i] != time_indices[i-1]+1:
       n_noncontiguous += 1
-  return n_noncontiguous
+  N = float(len(time_indices))
+  return 4*n_noncontiguous + N*N/(4.*4.)
 
+
+@jit(nopython=True)
+def time_density_add(time_indices,add_times,at_order):
+  j = 0
+  costs = np.zeros(len(add_times),np.float_)
+  if not len(add_times):
+    return costs
+  for i in range(len(time_indices)):
+    if (i < len(time_indices)-1 and
+        add_times[at_order[j]] == time_indices[i]+1 and
+        add_times[at_order[j]] == time_indices[i+1]-1):
+      costs[j] -= 1
+    while time_indices[i] > add_times[at_order[j]]:
+      if ((i > 0 and add_times[at_order[j]] != time_indices[i-1]+1) and
+          add_times[at_order[j]] != time_indices[i]+1 and
+          add_times[at_order[j]] != time_indices[i]-1):
+        costs[j] += 1
+
+      j += 1
+      if j >= len(at_order): return costs
+
+  for jend in range(j+1,len(at_order)):
+    costs[jend] += 1
+
+  return 4.0*costs + float(len(time_indices))/4.0
 
 cost_fns = {'density': time_density,
             'sparsity': time_sparsity,
             'none': lambda xs: 0.0}
+
+add_cost_fns = {'density': time_density_add,
+                'sparsity': time_sparsity_add,
+                'none': lambda x,y,z: 0.0}
+
 
 def read_problem(file):
   with open(file,'r') as f:
@@ -53,8 +101,9 @@ def read_schedule_json(obj):
   costs = obj['costs']
   times = sorted(map(sch.as_timerange,obj['times']))
   mids = obj['requirements'].keys()
+  meeting_names = obj['meeting_names']
 
-  schedule = FastSchedule(agents,costs,times,mids)
+  schedule = FastSchedule(agents,costs,times,mids,meeting_names)
 
   mindices = {mid: mindex for mindex,mid in enumerate(mids)}
   aindices = {agent: aindex for aindex,agent in enumerate(agents)}
@@ -133,10 +182,11 @@ def cached(fn):
 
 
 class FastSchedule(object):
-  def __init__(self,agents,costs,times,mids):
+  def __init__(self,agents,costs,times,mids,meeting_names):
     self.cache = {}
     self.agents = agents
     self.times = times
+    self.meeting_names = meeting_names
     self.mids = mids
     self.costs = costs
 
@@ -158,6 +208,8 @@ class FastSchedule(object):
     # length of each list of possible times for each meeting
     # row n: the number of times for nth meeting
     self.possible_times_len = None
+    # the predicted cost of selecting each possible time for each meeting
+    self.possible_time_costs = None
 
     # array of agents that all must be at a meeting
     # row n: agents for nth meeting
@@ -184,13 +236,15 @@ class FastSchedule(object):
     self.unsatisfied_len = len(self.mids)
 
   def copy(self):
-    schedule = FastSchedule(self.agents,self.costs,self.times,self.mids)
+    schedule = FastSchedule(self.agents,self.costs,self.times,self.mids,
+                            self.meeting_names)
 
     schedule.meetings = self.meetings.copy()
     schedule.mtimes = self.mtimes.copy()
 
     schedule.possible_times = self.possible_times.copy()
     schedule.possible_times_len = self.possible_times_len.copy()
+    schedule.possible_time_costs = self.possible_time_costs.copy()
 
     schedule.allof = self.allof.copy()
     schedule.allof_len = self.allof_len.copy()
@@ -203,10 +257,42 @@ class FastSchedule(object):
 
     return schedule
 
+  def to_csv(self,file):
+    with open(file,'w') as f:
+      f.write("time")
+      for aindex,agent in enumerate(self.agents):
+        f.write(',"'+agent+'"')
+      f.write('\n')
+      for tindex,time in enumerate(self.times):
+        f.write(str(time))
+        for aindex,agent in enumerate(self.agents):
+          f.write(',"')
+          if self.meetings[aindex,tindex] > 0:
+            mindex = self.meetings[aindex,tindex]-1
+
+            if self.mids[mindex] in self.meeting_names:
+              f.write(self.meeting_names[self.mids[mindex]])
+            else:
+              aindices = self.allof[mindex,:self.allof_len[mindex]].tolist()
+              if self.oneof_selected[mindex] > 0:
+                aindices.append(self.oneof_selected[mindex])
+              aindices = set(aindices)
+              aindices.remove(aindex)
+
+              for i,aindexB in enumerate(aindices):
+                names = self.agents[aindexB].split(" ")
+                if i > 0: f.write(',')
+                f.write(names[0][0]+". "+names[-1])
+
+          f.write('"')
+        f.write('\n')
+
+
   def _tojson_helper(self):
     result = {}
     result['agents'] = self.agents
     result['times'] = self.times
+    result['meeting_names'] = self.meeting_names
 
     result['requirements'] = {}
     result['unsatisfied'] = {}
@@ -286,6 +372,8 @@ class FastSchedule(object):
     self.possible_times = np.zeros((len(self.mids),
                                     len(self.times)),dtype='int_')
     self.possible_times_len = np.zeros(len(self.mids),dtype='int_')
+    self.possible_time_costs = np.zeros((len(self.mids),
+                                         len(self.times)),dtype='float_')
     for mindex in xrange(len(self.mids)):
       allofs = self.allof[mindex,:self.allof_len[mindex]]
       oneofs = self.oneof[mindex,:self.oneof_len[mindex]]
@@ -347,16 +435,18 @@ class FastSchedule(object):
                            p=weights.astype('float_')/np.sum(weights))
         mindex = self.unsatisfied[unsatisfied_i]
 
-        # randomly select one of the possible times...
-        times = self.possible_times[mindex,:self.possible_times_len[mindex]]
-        tindex = np.random.choice(times)
     else:
       unsatisfied_i = \
         np.where(mindex == self.unsatisfied[:self.unsatisfied_len])[0][0]
 
-      # randomly select one of the possible times...
-      times = self.possible_times[mindex,:self.possible_times_len[mindex]]
-      tindex = np.random.choice(times)
+    # randomly select one of the possible times...
+    # (weight based on the cost of those times)
+    times = self.possible_times[mindex,:self.possible_times_len[mindex]]
+    tweights = self.possible_time_costs[mindex,:self.possible_times_len[mindex]]
+    tweights_min = np.min(tweights)
+    tweights = 1.0/(tweights.astype('float_') + (1-tweights_min))
+    tweights = tweights*tweights
+    tindex = np.random.choice(times,p=tweights / np.sum(tweights))
 
     return self.update_schedule(mindex,tindex,unsatisfied_i)
 
@@ -395,13 +485,26 @@ class FastSchedule(object):
           if (np.any(self.meetings[allofB,tindex] >= 0) or
               (len(oneofB) > 0 and np.all(self.meetings[oneofB,tindex] >= 0))):
 
-            # remove the meeting time
             t = np.where(ts == tindex)[0]
             if len(t):
+              # remove the meeting time
               if t < self.possible_times_len[mindexB]-1:
                 self.possible_times[mindexB,t] = \
                   self.possible_times[mindexB,self.possible_times_len[mindexB]-1]
               self.possible_times_len[mindexB] -= 1
+
+              # recalculate possible time costs
+              self.possible_time_costs[mindexB,:self.possible_times_len[mindexB]] =\
+                np.zeros(self.possible_times_len[mindexB],'int_')
+              ptimes = self.possible_times[mindexB,
+                                           :self.possible_times_len[mindexB]]
+              torder = np.argsort(ptimes,kind='heapsort')
+              for aindex in allofB:
+                times = np.where(self.meetings[aindex,:] > 0)[0]
+                if self.agents[aindex] in self.costs:
+                  cost_fn = add_cost_fns[self.costs[self.agents[aindex]]]
+                  self.possible_time_costs[mindexB,:self.possible_times_len[mindexB]] +=\
+                    cost_fn(times,ptimes,torder)
 
             # if this meeting cannot be satisified, then give up.
             if self.possible_times_len[mindexB] <= 0:
